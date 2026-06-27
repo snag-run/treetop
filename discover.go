@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -18,13 +19,19 @@ import (
 // (git queries + working-tree walk in listWorktrees), so projects the caller has
 // filtered out cost nothing beyond cheap name discovery. A nil keep enriches
 // every project.
-func discoverProjects(roots []string, keep func(name string) bool) ([]Project, error) {
+//
+// A missing/unreadable root is not fatal: scanning continues with the other
+// roots and the bad root is returned (as a "<root>: <err>" string) in badRoots
+// so the caller can warn about it. Surfacing rather than printing keeps the
+// watch-mode refresh path quiet (it would corrupt the live TUI every tick).
+func discoverProjects(roots []string, keep func(name string) bool) (projects []Project, badRoots []string, err error) {
 	// Map from a repo's common git dir -> a known worktree path we can query.
 	seen := map[string]string{}
 
 	for _, root := range roots {
 		entries, err := os.ReadDir(root)
 		if err != nil {
+			badRoots = append(badRoots, fmt.Sprintf("%s: %v", root, err))
 			continue // a missing/unreadable root is not fatal
 		}
 		for _, e := range entries {
@@ -45,7 +52,6 @@ func discoverProjects(roots []string, keep func(name string) bool) ([]Project, e
 		}
 	}
 
-	var projects []Project
 	for common, anyWorktree := range seen {
 		name := projectName(common)
 		if keep != nil && !keep(name) {
@@ -62,7 +68,7 @@ func discoverProjects(roots []string, keep func(name string) bool) ([]Project, e
 	}
 
 	sort.Slice(projects, func(i, j int) bool { return projects[i].Name < projects[j].Name })
-	return projects, nil
+	return projects, badRoots, nil
 }
 
 // gitCommonDir returns the absolute path to a repo's shared git directory,
