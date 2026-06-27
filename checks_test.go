@@ -2,8 +2,25 @@ package main
 
 import (
 	"regexp"
+	"strings"
 	"testing"
 )
+
+// setGHHealthNote overrides the cached gh-health note for a test and restores it
+// afterward, so prHeaderNote assertions don't depend on whether gh happens to be
+// installed/authenticated in the test environment.
+func setGHHealthNote(t *testing.T, note string) {
+	t.Helper()
+	ghHealthMu.Lock()
+	prev := ghHealthNote
+	ghHealthNote = note
+	ghHealthMu.Unlock()
+	t.Cleanup(func() {
+		ghHealthMu.Lock()
+		ghHealthNote = prev
+		ghHealthMu.Unlock()
+	})
+}
 
 func TestCheckStateOf(t *testing.T) {
 	cases := []struct {
@@ -136,6 +153,7 @@ func TestEnrichPRChecksCapsProjects(t *testing.T) {
 
 func TestPRHeaderNote(t *testing.T) {
 	pat := []*regexp.Regexp{regexp.MustCompile("x")}
+	setGHHealthNote(t, "") // assume gh is healthy for the base cases
 
 	if note := prHeaderNote(options{}, nil, false); note != "" {
 		t.Errorf("note with --pr off should be empty, got %q", note)
@@ -164,5 +182,32 @@ func TestPRHeaderNote(t *testing.T) {
 	// The live "/" filter alone is enough to leave dormancy.
 	if note := prHeaderNote(options{pr: true}, few, true); note != "" {
 		t.Errorf("live filter within cap should have no note, got %q", note)
+	}
+}
+
+func TestPRHeaderNoteGHProblem(t *testing.T) {
+	pat := []*regexp.Regexp{regexp.MustCompile("x")}
+	setGHHealthNote(t, "PR checks: gh not authenticated — run `gh auth login`")
+
+	// Active + filtered: the gh problem surfaces, and takes precedence over the
+	// over-cap truncation note (a dead gh matters more than how many matched).
+	var many []Project
+	for i := 0; i < maxPRPollProjects+1; i++ {
+		many = append(many, Project{})
+	}
+	note := prHeaderNote(options{pr: true, patterns: pat}, many, false)
+	if !strings.Contains(note, "authenticated") {
+		t.Errorf("active polling with unusable gh should report it, got %q", note)
+	}
+
+	// Dormant (no filter): still the "filter to enable" message — we don't nag
+	// about gh auth until polling is actually attempted.
+	if note := prHeaderNote(options{pr: true}, nil, false); !strings.Contains(note, "filter") {
+		t.Errorf("dormant note should ask to filter, not mention gh, got %q", note)
+	}
+
+	// Flag off: nothing, regardless of gh health.
+	if note := prHeaderNote(options{}, many, false); note != "" {
+		t.Errorf("--pr off should suppress the gh note, got %q", note)
 	}
 }

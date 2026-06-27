@@ -150,10 +150,11 @@ never descended into, so the cost of a deeper scan is just the directory stats).
 
 With `--pr`, each worktree gets a glyph for the rolled-up CI status of the open
 pull request whose head is that worktree's branch. The status comes from the
-[`gh`](https://cli.github.com) CLI, so `gh` must be installed and authenticated;
-when it isn't (or a repo has no GitHub remote), the column is simply blank — it
-never errors. In `--projects` view the glyph is the worst status across the
-project's worktrees.
+[`gh`](https://cli.github.com) CLI, so `gh` must be installed and authenticated.
+When `gh` is missing or unauthenticated, the column is blank (never an error) and
+the header says why — e.g. `PR checks: gh not authenticated — run gh auth login`.
+A repo with no GitHub remote stays quietly blank. In `--projects` view the glyph
+is the worst status across the project's worktrees.
 
 | Glyph | Meaning |
 |-------|---------|

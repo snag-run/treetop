@@ -221,8 +221,69 @@ func enrichPRChecks(projects []Project) (polled int) {
 			}
 		}(p)
 	}
+	// Refresh the gh-health signal on the same (background) refresh path, so the
+	// header can explain a blank column when gh is missing or unauthenticated
+	// rather than leaving the user guessing. Cached, so it's at most one extra
+	// `gh auth status` per ghHealthTTL.
+	refreshGHHealth()
 	wg.Wait()
 	return polled
+}
+
+// ghHealthTTL bounds how often the gh-health probe runs. Auth state rarely
+// changes, so a stale-by-this-much answer is fine and spares a subprocess on
+// every refresh.
+const ghHealthTTL = 30 * time.Second
+
+var (
+	ghHealthMu   sync.Mutex
+	ghHealthAt   time.Time
+	ghHealthNote string // "" when gh is usable; otherwise a header-ready note
+)
+
+// refreshGHHealth probes whether gh is usable (installed + authenticated) and
+// caches a header note describing the problem, or "" when healthy. It runs on
+// the refresh goroutine; the render loop only ever reads the cached note via
+// ghProblemNote, so it never blocks the UI on a subprocess.
+func refreshGHHealth() {
+	ghHealthMu.Lock()
+	fresh := !ghHealthAt.IsZero() && time.Since(ghHealthAt) < ghHealthTTL
+	ghHealthMu.Unlock()
+	if fresh {
+		return
+	}
+
+	note := probeGHHealth()
+
+	ghHealthMu.Lock()
+	ghHealthNote, ghHealthAt = note, time.Now()
+	ghHealthMu.Unlock()
+}
+
+// probeGHHealth returns "" when gh is installed and authenticated, otherwise a
+// note explaining which is missing. A missing binary is checked first (cheap,
+// no subprocess); auth is verified with `gh auth status`, which exits non-zero
+// when no host is logged in.
+func probeGHHealth() string {
+	if _, err := exec.LookPath("gh"); err != nil {
+		return "PR checks: gh not found on PATH — install the GitHub CLI"
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), prFetchTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "gh", "auth", "status")
+	cmd.Env = hardenedGitEnv()
+	if err := cmd.Run(); err != nil {
+		return "PR checks: gh not authenticated — run `gh auth login`"
+	}
+	return ""
+}
+
+// ghProblemNote returns the cached gh-health note (empty when gh is usable or
+// hasn't been probed yet). Safe to call from the render loop: it only reads.
+func ghProblemNote() string {
+	ghHealthMu.Lock()
+	defer ghHealthMu.Unlock()
+	return ghHealthNote
 }
 
 // shouldPollPR reports whether PR status should be fetched: the --pr flag is set

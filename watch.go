@@ -649,6 +649,11 @@ func prHeaderNote(opts options, projects []Project, liveActive bool) string {
 	if !prFilterActive(opts, liveActive) {
 		return "PR checks: filter the list (pattern, /, --in-use/--open) to enable"
 	}
+	// Polling is active: if gh itself is unusable, say so — otherwise a blank
+	// column looks like "no PRs" when it really means "gh can't answer".
+	if note := ghProblemNote(); note != "" {
+		return note
+	}
 	if n := len(projects); n > maxPRPollProjects {
 		return fmt.Sprintf("PR checks: first %d of %d projects — narrow further for the rest", maxPRPollProjects, n)
 	}
