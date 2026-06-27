@@ -638,7 +638,7 @@ func headerLines(r renderer, opts options, projects []Project, supported bool, a
 		}
 	}
 
-	title := fmt.Sprintf("treetop  %s  (every %ds)", time.Now().Format("15:04:05"), opts.interval)
+	title := fmt.Sprintf("treetop · by snag.run  %s  (every %ds)", time.Now().Format("15:04:05"), opts.interval)
 	// Flag staleness once the data is older than two refresh intervals (a missed
 	// tick), so normal jitter under one interval stays quiet. Appended plain so
 	// it inherits the bold title rather than nesting color escapes.
