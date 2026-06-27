@@ -7,9 +7,28 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"runtime/debug"
 	"strings"
 	"time"
 )
+
+// version is the treetop version. Release builds override it via
+// -ldflags "-X main.version=...". For `go install`-built binaries it stays
+// "dev" and versionString falls back to the embedded module version.
+var version = "dev"
+
+// versionString returns the build version, preferring the ldflags-injected
+// value and falling back to the VCS/module version embedded by `go install
+// module@version`.
+func versionString() string {
+	if version != "dev" {
+		return version
+	}
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version
+	}
+	return version
+}
 
 const usage = `treetop - track git worktrees across projects
 
@@ -32,6 +51,7 @@ Flags:
   --open                 show only worktrees without a session (open)
   --root DIR             directory to scan for repos (repeatable; default: $HOME)
   --no-color             disable ANSI color
+  -V, --version          print version and exit
   -h, --help             show this help
 
 In-use detection combines a best-effort session scan (Linux via /proc, macOS via
@@ -49,6 +69,7 @@ type options struct {
 	projectsOnly bool
 	roots        []string
 	color        bool
+	showVersion  bool
 }
 
 // stringSlice is a repeatable string flag.
@@ -68,6 +89,7 @@ func parseFlags(args []string) (options, error) {
 		onlyOpen     bool
 		projectsOnly bool
 		noColor      bool
+		showVersion  bool
 		roots        stringSlice
 		exprs        stringSlice
 	)
@@ -83,10 +105,15 @@ func parseFlags(args []string) (options, error) {
 	fs.BoolVar(&projectsOnly, "projects", false, "")
 	fs.BoolVar(&projectsOnly, "p", false, "")
 	fs.BoolVar(&noColor, "no-color", false, "")
+	fs.BoolVar(&showVersion, "version", false, "")
+	fs.BoolVar(&showVersion, "V", false, "")
 	fs.Var(&roots, "root", "")
 
 	if err := fs.Parse(args); err != nil {
 		return options{}, err
+	}
+	if showVersion {
+		return options{showVersion: true}, nil
 	}
 	if onlyInUse && onlyOpen {
 		return options{}, fmt.Errorf("--in-use and --open are mutually exclusive")
@@ -128,6 +155,11 @@ func main() {
 		}
 		fmt.Fprintln(os.Stderr, "treetop:", err)
 		os.Exit(2)
+	}
+
+	if opts.showVersion {
+		fmt.Println("treetop", versionString())
+		return
 	}
 
 	if opts.watch {
