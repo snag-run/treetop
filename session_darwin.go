@@ -56,6 +56,27 @@ func agentPIDs() ([]string, error) {
 	return parsePSAgents(out), nil
 }
 
+// pidIsAgent reports whether the live process pid looks like an agent session,
+// so a .treetop-inuse marker carrying a recycled PID (left behind by a
+// SIGKILLed hook) isn't honoured forever once the OS reassigns that PID to an
+// unrelated process. It asks `ps` for just that pid's command line and applies
+// the same agent-name match the full scan uses.
+func pidIsAgent(pid int) bool {
+	out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "command=").Output()
+	if err != nil {
+		return false // pid gone, or ps unavailable: don't honour the marker
+	}
+	command := strings.TrimSpace(string(out))
+	if command == "" {
+		return false
+	}
+	argv0 := command
+	if i := strings.IndexByte(command, ' '); i >= 0 {
+		argv0 = command[:i]
+	}
+	return agentName(filepath.Base(argv0), command)
+}
+
 // parsePSAgents extracts the pids of agent processes from `ps -o pid=,command=`
 // output. Each line is "<pid> <command line>"; a process counts when its argv[0]
 // base name (or a node command line mentioning claude) looks like an agent.

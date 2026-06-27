@@ -71,6 +71,14 @@ func resolvedLink(link string) string {
 	return target
 }
 
+// pidIsAgent reports whether the live process pid looks like an agent session,
+// so a .treetop-inuse marker carrying a recycled PID (left behind by a
+// SIGKILLed hook) isn't honoured forever once the kernel reassigns that PID to
+// an unrelated process. It reuses the /proc identity read the session scan does.
+func pidIsAgent(pid int) bool {
+	return isAgentProcess(strconv.Itoa(pid))
+}
+
 // isAgentProcess reports whether pid looks like a Claude Code session, reading
 // /proc/<pid>/comm for the name and /proc/<pid>/cmdline for node disambiguation.
 func isAgentProcess(pid string) bool {

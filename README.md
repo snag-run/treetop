@@ -156,7 +156,8 @@ them by repository. A bare repo is discovered via any of its linked worktrees.
    deterministic, cross-platform signal: whatever drops the marker — not
    `treetop` — reports the activity. The marker's first line may be the owning
    process's PID, in which case it's honoured only while that process is alive
-   (a stale marker from a crashed writer is ignored).
+   and still looks like an agent session — so a stale marker from a crashed
+   writer is ignored, even if the OS later recycles its PID to something else.
 
 Known limits:
 
