@@ -126,10 +126,13 @@ $ treetop -p
 | `--in-use` | Show only worktrees with a live session |
 | `--open` | Show only worktrees with no session |
 | `--root DIR` | Directory to scan for repos (repeatable; default `$HOME`) |
+| `--depth N` | Levels below each root to scan for repos (default 1, max 3) |
 | `--no-color` | Disable ANSI color (also honors `NO_COLOR`) |
 
 By default `treetop` scans `$HOME` one level deep for git worktrees and groups
 them by repository. A bare repo is discovered via any of its linked worktrees.
+For nested layouts like `~/src/<host>/<org>/<repo>`, raise `--depth` (a repo is
+never descended into, so the cost of a deeper scan is just the directory stats).
 
 ### Vocabulary
 

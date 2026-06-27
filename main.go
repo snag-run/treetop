@@ -50,6 +50,7 @@ Flags:
   --in-use               show only worktrees with a live session (in use)
   --open                 show only worktrees without a session (open)
   --root DIR             directory to scan for repos (repeatable; default: $HOME)
+  --depth N              levels below each root to scan for repos (default 1, max 3)
   --no-color             disable ANSI color
   -V, --version          print version and exit
   -h, --help             show this help
@@ -68,9 +69,15 @@ type options struct {
 	onlyOpen     bool
 	projectsOnly bool
 	roots        []string
+	depth        int
 	color        bool
 	showVersion  bool
 }
+
+// maxScanDepth caps --depth. Repos are never descended into, so the practical
+// cost of a larger depth is the directory stats along the way; the cap keeps a
+// fat-fingered value from walking deep into large unrelated trees.
+const maxScanDepth = 3
 
 // stringSlice is a repeatable string flag.
 type stringSlice []string
@@ -85,6 +92,7 @@ func parseFlags(args []string) (options, error) {
 	var (
 		watch        bool
 		interval     int
+		depth        int
 		onlyInUse    bool
 		onlyOpen     bool
 		projectsOnly bool
@@ -108,6 +116,7 @@ func parseFlags(args []string) (options, error) {
 	fs.BoolVar(&showVersion, "version", false, "")
 	fs.BoolVar(&showVersion, "V", false, "")
 	fs.Var(&roots, "root", "")
+	fs.IntVar(&depth, "depth", 1, "")
 
 	if err := fs.Parse(args); err != nil {
 		return options{}, err
@@ -120,6 +129,14 @@ func parseFlags(args []string) (options, error) {
 	}
 	if interval < 1 {
 		interval = 1
+	}
+	// Clamp scan depth to a sane range. 1 preserves the default one-level scan;
+	// the cap keeps an accidental deep value from walking large directory trees.
+	if depth < 1 {
+		depth = 1
+	}
+	if depth > maxScanDepth {
+		depth = maxScanDepth
 	}
 	if len(roots) == 0 {
 		if home, err := os.UserHomeDir(); err == nil {
@@ -146,6 +163,7 @@ func parseFlags(args []string) (options, error) {
 		onlyOpen:     onlyOpen,
 		projectsOnly: projectsOnly,
 		roots:        roots,
+		depth:        depth,
 		color:        !noColor && useColor(),
 	}, nil
 }
@@ -251,7 +269,7 @@ const inUseDecay = 30 * time.Second
 // watch refresh path should ignore it — printing would corrupt the live TUI.
 func collect(opts options, tr *tracker, live []*regexp.Regexp) (projects []Project, badRoots []string, supported bool, err error) {
 	keep := func(name string) bool { return keepName(opts.patterns, live, name) }
-	projects, badRoots, err = discoverProjects(opts.roots, keep)
+	projects, badRoots, err = discoverProjects(opts.roots, opts.depth, keep)
 	if err != nil {
 		return nil, badRoots, false, err
 	}
