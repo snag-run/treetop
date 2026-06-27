@@ -4,6 +4,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
 
 func projectsNamed(names ...string) []Project {
@@ -132,6 +133,30 @@ func TestWatchFooterFilterMode(t *testing.T) {
 	noBox := watchFooter(r, footerState{total: 3, viewport: 10, filterable: false})
 	if strings.Contains(noBox, "/ filter") {
 		t.Errorf("CLI-filtered footer should hide the filter key: %q", noBox)
+	}
+}
+
+func TestHeaderLinesStaleness(t *testing.T) {
+	r := newRenderer(nil, false, false)
+	opts := options{interval: 2} // stale threshold is two intervals = 4s
+
+	fresh := headerLines(r, opts, nil, true, time.Second)
+	if strings.Contains(fresh[0], "stale") {
+		t.Errorf("data within one interval should not be flagged stale: %q", fresh[0])
+	}
+
+	stale := headerLines(r, opts, nil, true, 5*time.Second)
+	if !strings.Contains(stale[0], "stale") {
+		t.Errorf("data older than two intervals should be flagged stale: %q", stale[0])
+	}
+
+	// Boundary: the threshold is >= two intervals (4s here), so 3s is still
+	// fresh and exactly 4s flips to stale.
+	if h := headerLines(r, opts, nil, true, 3*time.Second); strings.Contains(h[0], "stale") {
+		t.Errorf("just under the threshold should stay fresh: %q", h[0])
+	}
+	if h := headerLines(r, opts, nil, true, 4*time.Second); !strings.Contains(h[0], "stale") {
+		t.Errorf("exactly at the threshold should be stale: %q", h[0])
 	}
 }
 

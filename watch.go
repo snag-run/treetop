@@ -69,6 +69,7 @@ type snapshot struct {
 	projects  []Project
 	supported bool
 	err       error
+	startedAt time.Time // when this refresh's collection began, for the staleness age
 }
 
 // runWatch renders a continuously-refreshing, scrollable dashboard until the
@@ -122,6 +123,7 @@ func runWatch(opts options) {
 
 	cur := snapshot{}
 	loading := true
+	var lastUpdate time.Time // when cur last changed, for the staleness indicator
 	offset := 0
 	var viewport, maxOffset int
 
@@ -158,7 +160,7 @@ func runWatch(opts options) {
 		if valid {
 			projects = filterByName(projects, patterns)
 		}
-		header = headerLines(r, opts, projects, cur.supported)
+		header = headerLines(r, opts, projects, cur.supported, time.Since(lastUpdate))
 		switch {
 		case cur.err != nil:
 			body = []string{"  error: " + cur.err.Error()}
@@ -277,11 +279,21 @@ func runWatch(opts options) {
 		return false
 	}
 
+	// A slow refresh can't block this loop (refreshLoop runs separately), so tick
+	// once a second to keep the clock and the staleness indicator live even when
+	// no snapshot or input arrives — otherwise an overdue refresh would go
+	// unnoticed on a frozen frame.
+	ui := time.NewTicker(time.Second)
+	defer ui.Stop()
+
 	render()
 	for {
 		select {
 		case cur = <-snaps:
 			loading = false
+			lastUpdate = cur.startedAt
+			render()
+		case <-ui.C:
 			render()
 		case e := <-events:
 			prevQuery := query
@@ -330,8 +342,12 @@ func refreshLoop(opts options, queries <-chan string, out chan snapshot, done <-
 		if err != nil {
 			live = nil // invalid regex: don't narrow the collected set
 		}
+		// Stamp when collection began, not when it finishes, so the staleness
+		// age reflects true data age: a slow-but-steady collect (each refresh
+		// running longer than the interval) still ages past the threshold.
+		started := time.Now()
 		projects, _, supported, cerr := collect(opts, tr, live)
-		s := snapshot{projects: projects, supported: supported, err: cerr}
+		s := snapshot{projects: projects, supported: supported, err: cerr, startedAt: started}
 		select { // drop a stale pending snapshot, then deliver the fresh one
 		case <-out:
 		default:
@@ -562,7 +578,8 @@ func runWatchPlain(opts options) {
 	for {
 		projects, _, supported, err := collect(opts, tr, nil)
 		fmt.Fprint(out, clearHome)
-		for _, l := range headerLines(r, opts, projects, supported) {
+		// collect ran synchronously just now, so the data is fresh (age 0).
+		for _, l := range headerLines(r, opts, projects, supported, 0) {
 			fmt.Fprintln(out, l)
 		}
 		if err != nil {
@@ -575,8 +592,11 @@ func runWatchPlain(opts options) {
 	}
 }
 
-// headerLines builds the dashboard title and a live summary of counts.
-func headerLines(r renderer, opts options, projects []Project, supported bool) []string {
+// headerLines builds the dashboard title and a live summary of counts. age is
+// how long since the displayed snapshot was collected; when it runs well past
+// the refresh interval the title flags the data as stale, so an overdue or
+// stalled refresh isn't mistaken for fresh data.
+func headerLines(r renderer, opts options, projects []Project, supported bool, age time.Duration) []string {
 	nProjects := len(projects)
 	nWorktrees, nInUse := 0, 0
 	for _, p := range projects {
@@ -589,6 +609,12 @@ func headerLines(r renderer, opts options, projects []Project, supported bool) [
 	}
 
 	title := fmt.Sprintf("treetop  %s  (every %ds)", time.Now().Format("15:04:05"), opts.interval)
+	// Flag staleness once the data is older than two refresh intervals (a missed
+	// tick), so normal jitter under one interval stays quiet. Appended plain so
+	// it inherits the bold title rather than nesting color escapes.
+	if stale := 2 * time.Duration(opts.interval) * time.Second; age >= stale {
+		title += fmt.Sprintf("  · stale %ds", int(age.Seconds()))
+	}
 
 	inUse := fmt.Sprintf("%d in use", nInUse)
 	if supported {
