@@ -51,8 +51,9 @@ jobs:
           tag="${{ needs.release-please.outputs.tag_name }}"
           version="${tag#v}"
           mkdir -p dist
-          # windows/amd64 and darwin/arm64 (Apple Silicon) are omitted until tested.
-          for target in linux/amd64 linux/arm64 darwin/amd64; do
+          # windows is unsupported (run under WSL); macOS (Intel + Apple Silicon)
+          # and Linux ship binaries.
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
             os="${target%/*}"; arch="${target#*/}"
             ext=""; [ "$os" = windows ] && ext=".exe"
             out="treetop_${version}_${os}_${arch}${ext}"

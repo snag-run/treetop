@@ -107,13 +107,13 @@ them by repository. A bare repo is discovered via any of its linked worktrees.
 
 `treetop` decides a worktree is **in use** from two independent signals:
 
-1. **A `/proc` scan** (best-effort, Linux-only). It finds live `claude`
-   processes and marks a worktree if the process is working at or below it —
-   either by its working directory, or by a file it currently holds open. The
-   open-file check is what lets `treetop` catch **subagents**, which run
-   in-process and never `chdir` into the worktree they target. Because an open
-   descriptor is transient, a worktree stays marked for 30s after the signal
-   last appeared, so the `●` doesn't flicker.
+1. **A live-session scan** (best-effort; Linux via `/proc`, macOS via
+   `ps`+`lsof`). It finds live `claude` processes and marks a worktree if the
+   process is working at or below it — either by its working directory, or by a
+   file it currently holds open. The open-file check is what lets `treetop` catch
+   **subagents**, which run in-process and never `chdir` into the worktree they
+   target. Because an open descriptor is transient, a worktree stays marked for
+   30s after the signal last appeared, so the `●` doesn't flicker.
 2. **A `.treetop-inuse` marker file** at the worktree root. This is the
    deterministic, cross-platform signal: whatever drops the marker — not
    `treetop` — reports the activity. The marker's first line may be the owning
@@ -122,10 +122,11 @@ them by repository. A bare repo is discovered via any of its linked worktrees.
 
 Known limits:
 
-- The `/proc` scan is **Linux only**; elsewhere the marker file still works. A
-  blank/`?` means *unknown*, not *definitely open*.
+- The live-session scan runs on **Linux and macOS**. Windows isn't supported —
+  run `treetop` under WSL. (Elsewhere the scan is skipped and only the marker
+  file works; a blank/`?` then means *unknown*, not *definitely open*.)
 - A session whose working directory has drifted out of every worktree, and which
-  holds no files open under one, won't be counted by the `/proc` scan alone.
+  holds no files open under one, won't be counted by the scan alone.
 
 ### Marking agent (subagent) worktrees in use
 
@@ -154,8 +155,8 @@ other hooks), is idempotent, and for `--global` also adds `.treetop-inuse` to
 your global gitignore so the marker doesn't litter your repos. Requires `jq`.
 
 The hooks key on `SubagentStart` / `SubagentStop`. If several subagents share one
-worktree, the first to stop clears the marker early — the `/proc` scan covers
-that gap.
+worktree, the first to stop clears the marker early — the live-session scan
+covers that gap.
 
 ## License
 
