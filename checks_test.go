@@ -294,3 +294,25 @@ func TestPRHeaderNoteGHProblem(t *testing.T) {
 		t.Errorf("--pr off should suppress the gh note, got %q", note)
 	}
 }
+
+func TestPRReviewOf(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		pr   ghPR
+		want PRReview
+	}{
+		{"approved", ghPR{ReviewDecision: "APPROVED"}, ReviewApproved},
+		{"changes", ghPR{ReviewDecision: "CHANGES_REQUESTED"}, ReviewChangesRequested},
+		{"required", ghPR{ReviewDecision: "REVIEW_REQUIRED"}, ReviewRequired},
+		{"none", ghPR{ReviewDecision: ""}, ReviewNone},
+		{"draft", ghPR{IsDraft: true}, ReviewDraft},
+		// Draft wins over any decision: a draft isn't up for review.
+		{"draft beats decision", ghPR{IsDraft: true, ReviewDecision: "APPROVED"}, ReviewDraft},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := prReviewOf(c.pr); got != c.want {
+				t.Errorf("prReviewOf(%+v) = %v, want %v", c.pr, got, c.want)
+			}
+		})
+	}
+}

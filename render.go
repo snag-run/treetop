@@ -64,10 +64,29 @@ func (r renderer) prNumberSuffix(wt Worktree) string {
 	return fmt.Sprintf(" #%d", wt.PRNumber)
 }
 
+// reviewColor maps a PR's review state to the colour of its number suffix,
+// mirroring the checkGlyph palette: green approved, red changes-requested, yellow
+// awaiting review, dim draft. An open PR with no decision yet returns "" — left
+// plain so the colours that mean "needs a look" stand out against it.
+func reviewColor(review PRReview) string {
+	switch review {
+	case ReviewApproved:
+		return colGreen
+	case ReviewChangesRequested:
+		return colRed
+	case ReviewRequired:
+		return colYellow
+	case ReviewDraft:
+		return colDim
+	default: // ReviewNone: open, no decision
+		return ""
+	}
+}
+
 // refCell renders a worktree's ref padded to width, with its PR-number suffix (if
-// any) dimmed. Padding is measured on the plain text — the suffix's dim escapes
-// would otherwise throw off a %-*s field — so the next column stays aligned with
-// or without a PR.
+// any) coloured by review state (see reviewColor). Padding is measured on the
+// plain text — the suffix's colour escapes would otherwise throw off a %-*s field
+// — so the next column stays aligned with or without a PR.
 func (r renderer) refCell(wt Worktree, width int) string {
 	ref := sanitizeDisplay(wt.Ref())
 	suffix := r.prNumberSuffix(wt)
@@ -77,7 +96,11 @@ func (r renderer) refCell(wt Worktree, width int) string {
 	}
 	cell := ref
 	if suffix != "" {
-		cell += r.paint(colDim, suffix)
+		if c := reviewColor(wt.PRReview); c != "" {
+			cell += r.paint(c, suffix)
+		} else {
+			cell += suffix
+		}
 	}
 	return cell + strings.Repeat(" ", pad)
 }
