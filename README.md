@@ -156,7 +156,7 @@ When `gh` is missing or unauthenticated, the column is blank (never an error) an
 the header says why — e.g. `PR checks: gh not authenticated — run gh auth login`.
 A repo with no GitHub remote stays quietly blank. In `--projects` view the glyph
 is the worst status across the project's worktrees. The open PR's number is shown
-as a dim `#123` after the branch.
+in its own column after the branch as `#123`, coloured by its review state.
 
 | Glyph | Meaning |
 |-------|---------|
@@ -168,6 +168,20 @@ as a dim `#123` after the branch.
 
 The status folds **worst-wins**: one failing check among many passing ones shows
 `✗`. A PR with an empty check set is `○`, never `✓` — "no checks" is not "passing".
+
+The `#123` number is coloured by the PR's review state, so a glance tells you what
+needs attention:
+
+| Number | Review state |
+|--------|--------------|
+| `#123` (green) | approved |
+| `#123` (red) | changes requested |
+| `#123` (yellow) | review requested, still undecided |
+| `#123` (dim) | draft |
+| `#123` (plain) | open, no review decision yet |
+
+Only open PRs are tracked, so there are no merged/closed colours — once a PR
+merges, its branch and worktree are usually gone.
 
 ### Expanding the checks (`--checks`)
 

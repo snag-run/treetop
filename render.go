@@ -54,30 +54,60 @@ func (r renderer) checkGlyph(has bool, state CheckState) string {
 	}
 }
 
-// prNumberSuffix renders the " #123" tag appended to a worktree's ref when the
-// --pr column is active and an open PR was found, empty otherwise — so a PR-less
-// worktree (or a run without --pr) keeps a bare ref.
-func (r renderer) prNumberSuffix(wt Worktree) string {
+// prNumberText renders the "#123" tag for the standalone PR column when the --pr
+// column is active and an open PR was found, empty otherwise — so a PR-less
+// worktree (or a run without --pr) contributes a blank cell.
+func (r renderer) prNumberText(wt Worktree) string {
 	if !r.pr || !wt.HasPR || wt.PRNumber <= 0 {
 		return ""
 	}
-	return fmt.Sprintf(" #%d", wt.PRNumber)
+	return fmt.Sprintf("#%d", wt.PRNumber)
 }
 
-// refCell renders a worktree's ref padded to width, with its PR-number suffix (if
-// any) dimmed. Padding is measured on the plain text — the suffix's dim escapes
-// would otherwise throw off a %-*s field — so the next column stays aligned with
-// or without a PR.
+// reviewColor maps a PR's review state to the colour of its number suffix,
+// mirroring the checkGlyph palette: green approved, red changes-requested, yellow
+// awaiting review, dim draft. An open PR with no decision yet returns "" — left
+// plain so the colours that mean "needs a look" stand out against it.
+func reviewColor(review PRReview) string {
+	switch review {
+	case ReviewApproved:
+		return colGreen
+	case ReviewChangesRequested:
+		return colRed
+	case ReviewRequired:
+		return colYellow
+	case ReviewDraft:
+		return colDim
+	default: // ReviewNone: open, no decision
+		return ""
+	}
+}
+
+// refCell renders a worktree's ref padded to width. The PR number lives in its
+// own column (see prCell), not appended here.
 func (r renderer) refCell(wt Worktree, width int) string {
 	ref := sanitizeDisplay(wt.Ref())
-	suffix := r.prNumberSuffix(wt)
-	pad := width - len(ref) - len(suffix)
+	pad := width - len(ref)
 	if pad < 0 {
 		pad = 0
 	}
-	cell := ref
-	if suffix != "" {
-		cell += r.paint(colDim, suffix)
+	return ref + strings.Repeat(" ", pad)
+}
+
+// prCell renders the standalone PR-number column: the "#123" tag coloured by
+// review state (see reviewColor), padded to width. Padding is measured on the
+// plain text — the colour escapes would otherwise throw off the field — so the
+// next column stays aligned whether or not a worktree has a PR. Empty text
+// (no PR, or --pr off) yields a blank, aligned cell.
+func (r renderer) prCell(wt Worktree, width int) string {
+	text := r.prNumberText(wt)
+	pad := width - len(text)
+	if pad < 0 {
+		pad = 0
+	}
+	cell := text
+	if c := reviewColor(wt.PRReview); text != "" && c != "" {
+		cell = r.paint(c, text)
 	}
 	return cell + strings.Repeat(" ", pad)
 }
@@ -169,15 +199,20 @@ func (r renderer) render(projects []Project, supported bool) {
 	}
 	now := time.Now()
 
-	// Column widths for alignment: longest path and longest branch/ref.
-	pathW, refW := 0, 0
+	// Column widths for alignment: longest path, longest branch/ref, and longest
+	// PR number. prW stays 0 when --pr is off or no worktree has a PR, which
+	// collapses the PR column away entirely (see the row format below).
+	pathW, refW, prW := 0, 0, 0
 	for _, p := range projects {
 		for _, wt := range p.Worktrees {
 			if n := len(sanitizeDisplay(r.shorten(wt.Path))); n > pathW {
 				pathW = n
 			}
-			if n := len(sanitizeDisplay(wt.Ref())) + len(r.prNumberSuffix(wt)); n > refW {
+			if n := len(sanitizeDisplay(wt.Ref())); n > refW {
 				refW = n
+			}
+			if n := len(r.prNumberText(wt)); n > prW {
+				prW = n
 			}
 		}
 	}
@@ -214,8 +249,14 @@ func (r renderer) render(projects []Project, supported bool) {
 			status := r.statusCell(marker, r.checkGlyph(wt.HasPR, wt.Check))
 			path := sanitizeDisplay(r.shorten(wt.Path))
 			times := fmt.Sprintf("%-*s · %s", editW, editSegment(wt, now), changedSegment(wt, now))
-			fmt.Fprintf(r.w, "  %s %-*s  %s  %s\n",
-				status, pathW, path, r.refCell(wt, refW), r.paint(colDim, times))
+			// The PR column is shown only when something populates it; otherwise it
+			// collapses to nothing so non-PR views keep their original spacing.
+			prField := ""
+			if prW > 0 {
+				prField = r.prCell(wt, prW) + "  "
+			}
+			fmt.Fprintf(r.w, "  %s %-*s  %s  %s%s\n",
+				status, pathW, path, r.refCell(wt, refW), prField, r.paint(colDim, times))
 			if expand {
 				r.renderCheckRows(wt)
 			}

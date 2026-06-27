@@ -80,7 +80,41 @@ type ghPR struct {
 	Number            int             `json:"number"`
 	HeadRefName       string          `json:"headRefName"`
 	IsCrossRepository bool            `json:"isCrossRepository"`
+	IsDraft           bool            `json:"isDraft"`
+	ReviewDecision    string          `json:"reviewDecision"` // APPROVED/CHANGES_REQUESTED/REVIEW_REQUIRED, or "" when none required
 	Rollup            []ghRollupEntry `json:"statusCheckRollup"`
+}
+
+// PRReview is a pull request's review state, used to colour the PR-number suffix.
+// Only open PRs are fetched, so there are no closed/merged values: the states are
+// draft, the three GitHub review decisions, and "open with no decision yet".
+type PRReview int
+
+const (
+	ReviewNone             PRReview = iota // open, no review decision (or none required)
+	ReviewDraft                            // a draft PR — not yet up for review
+	ReviewRequired                         // review requested, still undecided
+	ReviewApproved                         // at least one approval, none outstanding
+	ReviewChangesRequested                 // a reviewer requested changes
+)
+
+// prReviewOf maps a PR's draft flag and review decision to a PRReview. Draft wins
+// over the decision: a draft isn't really up for review, so it reads as draft
+// regardless of any (usually empty) decision.
+func prReviewOf(pr ghPR) PRReview {
+	if pr.IsDraft {
+		return ReviewDraft
+	}
+	switch pr.ReviewDecision {
+	case "APPROVED":
+		return ReviewApproved
+	case "CHANGES_REQUESTED":
+		return ReviewChangesRequested
+	case "REVIEW_REQUIRED":
+		return ReviewRequired
+	default:
+		return ReviewNone
+	}
 }
 
 // checkStateOf normalises a single rollup entry into a CheckState, folding the
@@ -179,6 +213,7 @@ func rollupChecks(entries []ghRollupEntry) []Check {
 type prStatus struct {
 	Number int
 	State  CheckState
+	Review PRReview
 	Checks []Check
 }
 
@@ -194,7 +229,7 @@ func ghFetchPRChecks(dir string) (map[string]prStatus, bool) {
 
 	cmd := exec.CommandContext(ctx, "gh", "pr", "list",
 		"--state", "open", "--limit", "100",
-		"--json", "number,headRefName,isCrossRepository,statusCheckRollup")
+		"--json", "number,headRefName,isCrossRepository,isDraft,reviewDecision,statusCheckRollup")
 	cmd.Dir = dir
 	// gh shells out to git to resolve the repo from its remote. Harden that child
 	// git the same way git.go does: a scanned repo is untrusted, and git runs
@@ -224,6 +259,7 @@ func ghFetchPRChecks(dir string) (map[string]prStatus, bool) {
 		checks[pr.HeadRefName] = prStatus{
 			Number: pr.Number,
 			State:  rollupCheckState(pr.Rollup),
+			Review: prReviewOf(pr),
 			Checks: rollupChecks(pr.Rollup),
 		}
 	}
@@ -306,6 +342,7 @@ func enrichPRChecks(projects []Project) (polled int) {
 					p.Worktrees[j].Check = s.State
 					p.Worktrees[j].Checks = s.Checks
 					p.Worktrees[j].PRNumber = s.Number
+					p.Worktrees[j].PRReview = s.Review
 					p.Worktrees[j].HasPR = true
 				}
 			}
