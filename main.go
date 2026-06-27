@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 )
 
 const usage = `treetop - track git worktrees across projects
@@ -120,22 +119,6 @@ func runOnce(opts options) error {
 	}
 	newRenderer(os.Stdout, opts.color).render(projects, supported)
 	return nil
-}
-
-func runWatch(opts options) {
-	r := newRenderer(os.Stdout, opts.color)
-	for {
-		projects, supported, err := collect(opts)
-		fmt.Print("\033[H\033[2J") // home cursor + clear screen
-		fmt.Printf("treetop — %s (every %ds, Ctrl-C to exit)\n\n",
-			time.Now().Format("15:04:05"), opts.interval)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "treetop:", err)
-		} else {
-			r.render(projects, supported)
-		}
-		time.Sleep(time.Duration(opts.interval) * time.Second)
-	}
 }
 
 // collect discovers projects, marks active worktrees, and applies filters.
