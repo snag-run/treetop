@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 )
 
 const (
@@ -34,6 +35,37 @@ func (r renderer) paint(c, s string) string {
 		return s
 	}
 	return c + s + colReset
+}
+
+// sanitizeDisplay neutralises terminal control sequences that a malicious
+// directory or branch name could embed. treetop renders names, paths, and refs
+// that come straight from the filesystem and git, so a worktree dir named with
+// an ESC sequence would otherwise inject raw escapes into the terminal (display
+// spoofing, cursor hijacking). Every non-printable rune — ESC, other C0/C1
+// controls, DEL — is replaced with '?'. Only the rendered copy is scrubbed; the
+// stored path stays untouched so it remains usable for filesystem operations.
+// ASCII space is printable and preserved.
+func sanitizeDisplay(s string) string {
+	clean := true
+	for _, r := range s {
+		if !unicode.IsPrint(r) {
+			clean = false
+			break
+		}
+	}
+	if clean {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if unicode.IsPrint(r) {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('?')
+		}
+	}
+	return b.String()
 }
 
 // shorten replaces the home prefix with ~ for compact, copy-pasteable paths.
@@ -75,10 +107,10 @@ func (r renderer) render(projects []Project, supported bool) {
 	pathW, refW := 0, 0
 	for _, p := range projects {
 		for _, wt := range p.Worktrees {
-			if n := len(r.shorten(wt.Path)); n > pathW {
+			if n := len(sanitizeDisplay(r.shorten(wt.Path))); n > pathW {
 				pathW = n
 			}
-			if n := len(wt.Ref()); n > refW {
+			if n := len(sanitizeDisplay(wt.Ref())); n > refW {
 				refW = n
 			}
 		}
@@ -95,7 +127,7 @@ func (r renderer) render(projects []Project, supported bool) {
 	}
 
 	for _, p := range projects {
-		fmt.Fprintln(r.w, r.paint(colBold, p.Name))
+		fmt.Fprintln(r.w, r.paint(colBold, sanitizeDisplay(p.Name)))
 		for _, wt := range p.Worktrees {
 			marker := " "
 			if wt.InUse {
@@ -103,10 +135,10 @@ func (r renderer) render(projects []Project, supported bool) {
 			} else if !supported {
 				marker = r.paint(colDim, "?")
 			}
-			path := r.shorten(wt.Path)
+			path := sanitizeDisplay(r.shorten(wt.Path))
 			times := fmt.Sprintf("%-*s · %s", editW, editSegment(wt, now), changedSegment(wt, now))
 			fmt.Fprintf(r.w, "  %s %-*s  %-*s  %s\n",
-				marker, pathW, path, refW, wt.Ref(), r.paint(colDim, times))
+				marker, pathW, path, refW, sanitizeDisplay(wt.Ref()), r.paint(colDim, times))
 		}
 	}
 }
@@ -134,7 +166,7 @@ func (r renderer) renderCompact(projects []Project, supported bool) {
 
 	nameW := 0
 	for _, p := range projects {
-		if n := len(p.Name); n > nameW {
+		if n := len(sanitizeDisplay(p.Name)); n > nameW {
 			nameW = n
 		}
 	}
@@ -179,8 +211,9 @@ func (r renderer) renderCompact(projects []Project, supported bool) {
 			recent = "changed " + humanizeShort(changed, now)
 		}
 
-		pad := strings.Repeat(" ", nameW-len(p.Name))
+		name := sanitizeDisplay(p.Name)
+		pad := strings.Repeat(" ", nameW-len(name))
 		fmt.Fprintf(r.w, "  %s %s%s  %-13s  %s\n",
-			marker, r.paint(colBold, p.Name), pad, count, r.paint(colDim, recent))
+			marker, r.paint(colBold, name), pad, count, r.paint(colDim, recent))
 	}
 }

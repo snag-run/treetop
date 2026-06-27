@@ -2,7 +2,6 @@ package main
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -67,7 +66,7 @@ func discoverProjects(roots []string, keep func(name string) bool) ([]Project, e
 // gitCommonDir returns the absolute path to a repo's shared git directory,
 // which uniquely identifies the repository across all of its worktrees.
 func gitCommonDir(dir string) string {
-	out, err := exec.Command("git", "-C", dir, "rev-parse", "--path-format=absolute", "--git-common-dir").Output()
+	out, err := gitCommand(dir, "rev-parse", "--path-format=absolute", "--git-common-dir").Output()
 	if err != nil {
 		return ""
 	}

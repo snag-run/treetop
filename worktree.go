@@ -4,7 +4,6 @@ import (
 	"context"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -15,7 +14,7 @@ import (
 // listWorktrees returns every worktree of the repo that `dir` belongs to,
 // parsed from `git worktree list --porcelain` and enriched with last-activity.
 func listWorktrees(dir string) []Worktree {
-	out, err := exec.Command("git", "-C", dir, "worktree", "list", "--porcelain").Output()
+	out, err := gitCommand(dir, "worktree", "list", "--porcelain").Output()
 	if err != nil {
 		return nil
 	}
@@ -106,7 +105,7 @@ func ignoredDirs(worktreePath string) map[string]bool {
 	// wedged filesystem must not stall it.
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "git", "-C", worktreePath,
+	out, err := gitCommandContext(ctx, worktreePath,
 		"ls-files", "--others", "--ignored", "--exclude-standard", "--directory").Output()
 	if err != nil {
 		return nil // not a git repo, git unavailable, or timed out: prune only .git
