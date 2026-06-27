@@ -40,6 +40,41 @@ func TestWalkNewest(t *testing.T) {
 	}
 }
 
+func TestNewestEditEvictsStaleEntries(t *testing.T) {
+	// editCache is package-level state; isolate this test from any other.
+	editCacheMu.Lock()
+	editCache = map[string]editEntry{}
+	editCacheMu.Unlock()
+	t.Cleanup(func() {
+		editCacheMu.Lock()
+		editCache = map[string]editEntry{}
+		editCacheMu.Unlock()
+	})
+
+	// A stale entry for a vanished worktree, last computed well beyond the
+	// staleness threshold, alongside a recently-seen one.
+	now := time.Now()
+	editCacheMu.Lock()
+	editCache["/gone"] = editEntry{at: now.Add(-editCacheStale - time.Second)}
+	editCache["/fresh"] = editEntry{at: now}
+	editCacheMu.Unlock()
+
+	// Computing any path triggers the sweep.
+	newestEdit(t.TempDir())
+
+	editCacheMu.Lock()
+	_, goneStillCached := editCache["/gone"]
+	_, freshStillCached := editCache["/fresh"]
+	editCacheMu.Unlock()
+
+	if goneStillCached {
+		t.Error("stale entry should have been evicted")
+	}
+	if !freshStillCached {
+		t.Error("fresh entry should have survived")
+	}
+}
+
 func TestWalkNewestEmpty(t *testing.T) {
 	dir := t.TempDir()
 	touch(t, filepath.Join(dir, ".git", "HEAD"), time.Now())
