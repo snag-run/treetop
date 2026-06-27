@@ -112,9 +112,9 @@ func TestRenderPRGlyphColumn(t *testing.T) {
 	}
 }
 
-// TestRenderPRNumber asserts the open PR's number renders as a dim suffix on the
-// ref when --pr is on, is absent for a PR-less worktree, and never shows when the
-// column is off — and that the column stays aligned across both.
+// TestRenderPRNumber asserts the open PR's number renders in its own column when
+// --pr is on, is absent for a PR-less worktree, and never shows when the column
+// is off — and that the layout stays aligned across both.
 func TestRenderPRNumber(t *testing.T) {
 	now := time.Now()
 	mk := func(branch string, hasPR bool, n int) Worktree {
@@ -126,14 +126,14 @@ func TestRenderPRNumber(t *testing.T) {
 		mk("nopr", false, 0),
 	}}}
 
-	// --pr on: the PR number renders as a suffix on the ref; the PR-less worktree
-	// gets none. This worktree has no review decision (ReviewNone), so the suffix
+	// --pr on: the PR number renders in its own column; the PR-less worktree gets
+	// a blank cell. This worktree has no review decision (ReviewNone), so the cell
 	// is plain — colouring by review state is covered by TestRenderPRNumberColor.
 	var on strings.Builder
 	newRenderer(&on, true, false, true).render(projects, true)
 	out := on.String()
-	if !strings.Contains(out, " #56") {
-		t.Errorf("expected PR-number suffix #56:\n%s", out)
+	if !strings.Contains(out, "#56") {
+		t.Errorf("expected PR-number cell #56:\n%s", out)
 	}
 	if strings.Count(out, "#") != 1 {
 		t.Errorf("only the worktree with a PR should show a number:\n%s", out)
@@ -171,10 +171,10 @@ func TestRenderPRNumberColor(t *testing.T) {
 	for _, want := range []struct {
 		num, color string
 	}{
-		{" #1", colGreen},
-		{" #2", colRed},
-		{" #3", colYellow},
-		{" #4", colDim},
+		{"#1", colGreen},
+		{"#2", colRed},
+		{"#3", colYellow},
+		{"#4", colDim},
 	} {
 		if !strings.Contains(out, want.color+want.num+colReset) {
 			t.Errorf("expected %q coloured %q:\n%s", want.num, want.color, out)
@@ -182,12 +182,12 @@ func TestRenderPRNumberColor(t *testing.T) {
 	}
 	// The no-decision PR renders plain: present, but not wrapped in any colour.
 	for _, c := range []string{colGreen, colRed, colYellow, colDim} {
-		if strings.Contains(out, c+" #5"+colReset) {
+		if strings.Contains(out, c+"#5"+colReset) {
 			t.Errorf("open/no-decision PR #5 should be plain, found colour %q:\n%s", c, out)
 		}
 	}
-	if !strings.Contains(out, " #5") {
-		t.Errorf("expected plain PR-number suffix #5:\n%s", out)
+	if !strings.Contains(out, "#5") {
+		t.Errorf("expected plain PR-number cell #5:\n%s", out)
 	}
 }
 
