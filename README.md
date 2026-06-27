@@ -1,5 +1,7 @@
 # treetop
 
+*A project by [snag.run](https://snag.run).*
+
 A `top`-style tracker for your git worktrees across projects. See every worktree,
 its branch, which ones are in use, and when each last changed — in one view.
 
