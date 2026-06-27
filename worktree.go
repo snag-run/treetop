@@ -14,7 +14,11 @@ import (
 // listWorktrees returns every worktree of the repo that `dir` belongs to,
 // parsed from `git worktree list --porcelain` and enriched with last-activity.
 func listWorktrees(dir string) []Worktree {
-	out, err := gitCommand(dir, "worktree", "list", "--porcelain").Output()
+	// Bound the call: this runs on the dashboard refresh path, and a hung git or
+	// wedged filesystem must not stall it.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	out, err := gitCommandContext(ctx, dir, "worktree", "list", "--porcelain").Output()
 	if err != nil {
 		return nil
 	}
