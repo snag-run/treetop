@@ -126,6 +126,9 @@ func parseFlags(args []string) (options, error) {
 			roots = stringSlice{home}
 		}
 	}
+	if len(roots) == 0 {
+		return options{}, fmt.Errorf("could not determine a directory to scan: $HOME is unset (or unreadable) and no --root was given")
+	}
 
 	// Patterns come from -e/--regexp flags and from positional args; a project
 	// is shown if its name matches any of them (grep-style OR). Matching is
