@@ -64,6 +64,7 @@ type snapshot struct {
 	projects  []Project
 	supported bool
 	err       error
+	startedAt time.Time // when this refresh's collection began, for the staleness age
 }
 
 // runWatch renders a continuously-refreshing, scrollable dashboard until the
@@ -279,7 +280,7 @@ func runWatch(opts options) {
 		select {
 		case cur = <-snaps:
 			loading = false
-			lastUpdate = time.Now()
+			lastUpdate = cur.startedAt
 			render()
 		case <-ui.C:
 			render()
@@ -330,8 +331,12 @@ func refreshLoop(opts options, queries <-chan string, out chan snapshot, done <-
 		if err != nil {
 			live = nil // invalid regex: don't narrow the collected set
 		}
+		// Stamp when collection began, not when it finishes, so the staleness
+		// age reflects true data age: a slow-but-steady collect (each refresh
+		// running longer than the interval) still ages past the threshold.
+		started := time.Now()
 		projects, _, supported, cerr := collect(opts, tr, live)
-		s := snapshot{projects: projects, supported: supported, err: cerr}
+		s := snapshot{projects: projects, supported: supported, err: cerr, startedAt: started}
 		select { // drop a stale pending snapshot, then deliver the fresh one
 		case <-out:
 		default:
