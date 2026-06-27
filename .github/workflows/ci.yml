@@ -6,21 +6,43 @@ on:
   pull_request:
 
 jobs:
-  # Detect whether anything other than Markdown docs changed. Docs-only PRs
-  # skip the build matrix entirely, so no (billable) macOS runner is started.
+  # Decide whether the build matrix needs to run. Docs/config-only changes
+  # (Markdown, .github/, .claude/) skip it entirely, so no billable macOS
+  # runner is started. Detection uses plain git so we need no third-party
+  # action (the repo's Actions policy only allows GitHub-owned + select actions).
   changes:
     runs-on: ubuntu-latest
     outputs:
       code: ${{ steps.filter.outputs.code }}
     steps:
       - uses: actions/checkout@v7
-      - uses: dorny/paths-filter@v3
-        id: filter
         with:
-          filters: |
-            code:
-              - '**'
-              - '!**/*.md'
+          fetch-depth: 0
+      - id: filter
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.sha }}
+        run: |
+          set -u
+          # First push of a branch has an all-zero "before"; fall back to the
+          # single commit's file list.
+          if [ -z "${BASE:-}" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            changed=$(git show --name-only --pretty=format: "$HEAD")
+          else
+            changed=$(git diff --name-only "$BASE" "$HEAD")
+          fi
+          echo "Changed files:"
+          printf '%s\n' "$changed"
+          # A change counts as "code" unless every changed file is something we
+          # deliberately ignore: Markdown, GitHub config/workflows, or .claude/.
+          code=$(printf '%s\n' "$changed" | grep -vE '(^$|\.md$|^\.github/|^\.claude/)' || true)
+          if [ -n "$code" ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            echo "=> code change: running build matrix"
+          else
+            echo "code=false" >> "$GITHUB_OUTPUT"
+            echo "=> docs/config-only change: skipping build matrix"
+          fi
 
   build:
     needs: changes
@@ -50,7 +72,7 @@ jobs:
       - run: go build ./...
 
   # Single required status check. Passes when the build matrix succeeded, or
-  # was skipped for a docs-only change. This is the job to mark as required in
+  # was skipped for a docs/config-only change. Mark THIS job as required in
   # branch protection (not the individual "build (…)" matrix contexts, which
   # never report when the matrix job is skipped).
   ci:
@@ -67,7 +89,7 @@ jobs:
             echo "changes job did not succeed."
             exit 1
           fi
-          # "skipped" == docs-only change (allowed); "success" == real build passed.
+          # "skipped" == docs/config-only change (allowed); "success" == build passed.
           if [ "$build" = "success" ] || [ "$build" = "skipped" ]; then
             echo "CI gate passed."
           else
