@@ -125,6 +125,7 @@ $ treetop -p
 | `-i`, `--interval N` | Refresh interval in seconds (with `--watch`, default 2) |
 | `-p`, `--projects` | Collapse to one line per project (no worktrees) |
 | `--pr` | Show a PR check-status glyph per worktree (needs `gh`; polls only when filtered, max 5 projects) |
+| `--checks` | Expand `--pr` into one row per CI check under each worktree (implies `--pr`) |
 | `--in-use` | Show only worktrees with a live session |
 | `--open` | Show only worktrees with no session |
 | `--root DIR` | Directory to scan for repos (repeatable; default `$HOME`) |
@@ -166,6 +167,33 @@ is the worst status across the project's worktrees.
 
 The status folds **worst-wins**: one failing check among many passing ones shows
 `✗`. A PR with an empty check set is `○`, never `✓` — "no checks" is not "passing".
+
+### Expanding the checks (`--checks`)
+
+`--checks` keeps the rollup glyph and adds one indented row per individual check
+beneath the worktree, so you can see *which* check is red rather than just that
+something is:
+
+```
+treetop
+  ● ✗ ~/snag/feature   feature/login   edited 2m · changed 5m
+      ✗ lint
+      ● test (integration)
+      ✓ build
+```
+
+Rows are sorted worst-first (failures lead) and reuse the same glyph palette as
+the rollup. It implies `--pr` (same `gh` polling and gating) and applies to the
+full view only — `--projects` stays one line per project. The per-check data
+rides along on the same `gh` call, so expanding costs no extra requests.
+
+In `--watch`, the `c` key toggles the expansion live (so you don't have to
+relaunch), with `--checks` just setting the initial state. Expansion is **gated
+to the poll cap**: it's only available once the view is narrowed to
+`maxPRPollProjects` (5) or fewer projects — the same set that actually gets CI
+data. Above the cap the `c` hint disappears and the header's "first 5 of N —
+narrow further" note nudges you to filter, rather than rendering a half-populated
+wall of rows.
 
 **Polling is gated to avoid a request storm.** Each polled project costs one `gh`
 call, so `--pr` only polls when the list is **filtered** (a pattern, the live `/`

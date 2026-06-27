@@ -25,6 +25,7 @@ type renderer struct {
 	color      bool
 	compact    bool // one line per project, no worktree enumeration
 	pr         bool // show the PR check-status glyph column (--pr)
+	checks     bool // expand a per-check row under each worktree (--checks)
 	home       string
 	filterDesc string // active filter description; empty means no filter
 }
@@ -163,6 +164,12 @@ func (r renderer) render(projects []Project, supported bool) {
 		}
 	}
 
+	// Per-check rows only expand when the view is narrowed to the set that
+	// actually gets CI data: polling caps at maxPRPollProjects, so beyond that the
+	// expansion would be half-populated and a wall of rows. Above the cap the
+	// header already nudges the user to narrow further (see prHeaderNote).
+	expand := r.checks && len(projects) <= maxPRPollProjects
+
 	for i, p := range projects {
 		if i > 0 {
 			// Blank line between projects so adjacent groups don't run together.
@@ -181,7 +188,20 @@ func (r renderer) render(projects []Project, supported bool) {
 			times := fmt.Sprintf("%-*s · %s", editW, editSegment(wt, now), changedSegment(wt, now))
 			fmt.Fprintf(r.w, "  %s %-*s  %-*s  %s\n",
 				status, pathW, path, refW, sanitizeDisplay(wt.Ref()), r.paint(colDim, times))
+			if expand {
+				r.renderCheckRows(wt)
+			}
 		}
+	}
+}
+
+// renderCheckRows prints one indented row per CI check beneath its worktree, for
+// the --checks expanded view. Each row reuses the rollup glyph palette so a
+// check's glyph matches the worktree's summary glyph. A worktree with no PR (or
+// a PR with no individual checks) renders nothing.
+func (r renderer) renderCheckRows(wt Worktree) {
+	for _, c := range wt.Checks {
+		fmt.Fprintf(r.w, "      %s %s\n", r.checkGlyph(true, c.State), sanitizeDisplay(c.Name))
 	}
 }
 
