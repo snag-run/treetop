@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 // discoverProjects scans the given roots (one level deep) for git worktrees,
@@ -66,7 +68,11 @@ func discoverProjects(roots []string, keep func(name string) bool) ([]Project, e
 // gitCommonDir returns the absolute path to a repo's shared git directory,
 // which uniquely identifies the repository across all of its worktrees.
 func gitCommonDir(dir string) string {
-	out, err := gitCommand(dir, "rev-parse", "--path-format=absolute", "--git-common-dir").Output()
+	// Bound the call: this runs on the dashboard refresh path, and a hung git or
+	// wedged filesystem must not stall it.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	out, err := gitCommandContext(ctx, dir, "rev-parse", "--path-format=absolute", "--git-common-dir").Output()
 	if err != nil {
 		return ""
 	}
