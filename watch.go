@@ -53,6 +53,10 @@ type event struct {
 
 const wheelLines = 3 // lines scrolled per mouse-wheel notch
 
+// escSeqTimeout is how long to wait for the rest of a possibly-fragmented escape
+// sequence before deciding a lone ESC byte was a standalone Escape keypress.
+const escSeqTimeout = 50 * time.Millisecond
+
 // snapshot is the latest collected dashboard data, delivered by the refresh
 // goroutine. Rendering (and live filtering) happens on the main loop so a typed
 // filter re-windows the cached snapshot instantly without waiting for a tick.
@@ -207,6 +211,10 @@ func runWatch(opts options) {
 				offset -= viewport
 			case evPageDown:
 				offset += viewport
+			case evTop:
+				offset = 0
+			case evBottom:
+				offset = maxOffset
 			}
 			return false
 		}
@@ -363,14 +371,11 @@ func readInput(ch chan<- event) {
 		case b == 0x7f || b == 0x08: // Backspace / Delete
 			send(evBackspace)
 		case b == 0x1b: // Escape, alone or as a CSI sequence prefix
-			// A bare Escape arrives as a lone byte; a sequence (arrows, mouse)
-			// arrives with its remaining bytes already buffered. Distinguishing
-			// on Buffered() avoids blocking on a real Escape keypress.
-			if br.Buffered() == 0 {
-				send(evEsc)
-				continue
+			if b2, ok := nextEscByte(br); ok {
+				readEscape(b2, br, ch)
+			} else {
+				send(evEsc) // nothing followed within the window: a real Escape
 			}
-			readEscape(br, ch)
 		case b >= 0x20 && b < 0x7f: // printable ASCII -> rune
 			ch <- event{kind: evRune, ch: rune(b)}
 		case b >= 0xc0: // start of a multi-byte UTF-8 rune
@@ -381,11 +386,32 @@ func readInput(ch chan<- event) {
 	}
 }
 
-// readEscape parses the body of a CSI escape sequence (the leading ESC already
-// consumed) into a scroll/mouse event.
-func readEscape(br *bufio.Reader, ch chan<- event) {
-	b2, err := br.ReadByte()
-	if err != nil || b2 != '[' {
+// nextEscByte returns the byte following a just-read ESC, distinguishing a CSI
+// sequence (arrows, mouse) from a standalone Escape keypress. The remaining
+// sequence bytes usually arrive together, so a non-empty buffer means a
+// sequence; otherwise we wait briefly, since a sequence can be fragmented across
+// reads on slow links (e.g. SSH) and a premature decision would mis-read an
+// arrow key as Esc. If read deadlines aren't supported we fall back to the
+// buffer check, which never blocks on a true Escape.
+func nextEscByte(br *bufio.Reader) (byte, bool) {
+	if br.Buffered() > 0 {
+		b, err := br.ReadByte()
+		return b, err == nil
+	}
+	if err := os.Stdin.SetReadDeadline(time.Now().Add(escSeqTimeout)); err != nil {
+		return 0, false // deadlines unsupported: treat as a standalone Escape
+	}
+	defer os.Stdin.SetReadDeadline(time.Time{})
+	b, err := br.ReadByte()
+	return b, err == nil
+}
+
+// readEscape parses the body of a CSI escape sequence (the leading ESC and the
+// following byte b2 already consumed) into a scroll/mouse event. An ESC not
+// followed by '[' is treated as a standalone Escape.
+func readEscape(b2 byte, br *bufio.Reader, ch chan<- event) {
+	if b2 != '[' {
+		ch <- event{kind: evEsc}
 		return
 	}
 	b3, err := br.ReadByte()
