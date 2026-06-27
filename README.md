@@ -40,10 +40,13 @@ go build -o treetop .
 `treetop` has two modes:
 
 - **Snapshot** (default) — print once and exit. The plain CLI.
-- **Live** (`-w` / `--watch`) — a full-screen dashboard that refreshes in place,
-  like `top`. It uses the terminal's alternate screen (your scrollback is left
-  untouched on exit), shows a header with live counts (projects / worktrees /
-  in use), and exits cleanly on Ctrl-C.
+- **Live** (`-w` / `--watch`) — a full-screen, scrollable dashboard that
+  refreshes in place, like `top`. It uses the terminal's alternate screen (your
+  scrollback is left untouched on exit) and shows a header with live counts
+  (projects / worktrees / in use).
+
+  Scroll with the **mouse wheel**, **↑/↓** (or `j`/`k`), **PgUp/PgDn**, and
+  **g**/**G** (top/bottom). Quit with **q** or **Ctrl-C**.
 
 ```sh
 treetop                 # snapshot of every project's worktrees

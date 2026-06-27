@@ -44,6 +44,20 @@ func (r renderer) shorten(path string) string {
 	return path
 }
 
+// bodyLines renders the table to a slice of lines (no trailing newline),
+// for the live dashboard to window into a scroll viewport.
+func (r renderer) bodyLines(projects []Project, supported bool) []string {
+	var b strings.Builder
+	rb := r
+	rb.w = &b
+	rb.render(projects, supported)
+	s := strings.TrimRight(b.String(), "\n")
+	if s == "" {
+		return nil
+	}
+	return strings.Split(s, "\n")
+}
+
 // render prints the projects grouped by repo. supported indicates whether
 // session detection ran (false -> the in-use marker is shown as unknown).
 func (r renderer) render(projects []Project, supported bool) {
