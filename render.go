@@ -19,10 +19,11 @@ const (
 
 // renderer writes project/worktree tables, optionally with ANSI color.
 type renderer struct {
-	w       io.Writer
-	color   bool
-	compact bool // one line per project, no worktree enumeration
-	home    string
+	w          io.Writer
+	color      bool
+	compact    bool // one line per project, no worktree enumeration
+	home       string
+	filterDesc string // active filter description; empty means no filter
 }
 
 func newRenderer(w io.Writer, color, compact bool) renderer {
@@ -94,7 +95,11 @@ func (r renderer) bodyLines(projects []Project, supported bool) []string {
 // session detection ran (false -> the in-use marker is shown as unknown).
 func (r renderer) render(projects []Project, supported bool) {
 	if len(projects) == 0 {
-		fmt.Fprintln(r.w, "No worktrees found.")
+		if r.filterDesc != "" {
+			fmt.Fprintf(r.w, "No worktrees match %s.\n", r.filterDesc)
+		} else {
+			fmt.Fprintln(r.w, "No worktrees found.")
+		}
 		return
 	}
 	if r.compact {

@@ -177,8 +177,36 @@ func runOnce(opts options) error {
 	if err != nil {
 		return err
 	}
-	newRenderer(os.Stdout, opts.color, opts.projectsOnly).render(projects, supported)
+	r := newRenderer(os.Stdout, opts.color, opts.projectsOnly)
+	r.filterDesc = filterDescription(opts)
+	r.render(projects, supported)
 	return nil
+}
+
+// filterDescription summarises the active filters for the one-shot empty
+// message, so "nothing matched the filter" reads differently from "no worktrees
+// exist". Returns "" when no filter is active.
+func filterDescription(opts options) string {
+	var parts []string
+	if opts.onlyInUse {
+		parts = append(parts, "--in-use")
+	}
+	if opts.onlyOpen {
+		parts = append(parts, "--open")
+	}
+	if len(opts.patterns) > 0 {
+		pats := make([]string, 0, len(opts.patterns))
+		for _, re := range opts.patterns {
+			// Patterns are compiled case-insensitive ("(?i)…"); show the source.
+			pats = append(pats, fmt.Sprintf("%q", strings.TrimPrefix(re.String(), "(?i)")))
+		}
+		label := "pattern "
+		if len(pats) > 1 {
+			label = "patterns "
+		}
+		parts = append(parts, label+strings.Join(pats, ", "))
+	}
+	return strings.Join(parts, " and ")
 }
 
 // inUseDecay is how long a worktree stays marked in-use after its session
