@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/snag-run/treetop/compare/v0.1.0...v0.1.1) (2026-06-27)
+
+
+### Bug Fixes
+
+* prevent code execution and terminal injection from scanned repos ([#23](https://github.com/snag-run/treetop/issues/23)) ([733b5ce](https://github.com/snag-run/treetop/commit/733b5ce7ba7665f40ecfd4108da57c2cbcdbc714))
+
 ## 0.1.0 (2026-06-27)
 
 
