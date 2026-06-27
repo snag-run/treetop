@@ -54,17 +54,29 @@ func TestWalkNewestEmpty(t *testing.T) {
 func TestWalkNewestBoundedExceedsBudget(t *testing.T) {
 	dir := t.TempDir()
 	base := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
-	for i := 0; i < 50; i++ {
-		touch(t, filepath.Join(dir, "f"+strconv.Itoa(i)+".txt"), base)
-	}
+	newest := base.Add(time.Hour)
 
-	// An already-expired deadline forces the bound to trip on the first entry.
+	// Lay out the tree so the deadline branch must fire before the walk finishes:
+	// the deadline is only checked every walkDeadlineCheckEvery entries, so create
+	// more than that many "old" files (all mtime=base), plus one newest-mtime file
+	// that sorts last. filepath.WalkDir visits in lexical order, so with an
+	// already-expired deadline the walk stops at the first check (after
+	// walkDeadlineCheckEvery old files) and never reaches the newest file. If the
+	// bound did NOT fire, got would equal `newest`.
+	for i := 0; i < walkDeadlineCheckEvery+64; i++ {
+		touch(t, filepath.Join(dir, "a"+strconv.Itoa(i)+".txt"), base)
+	}
+	touch(t, filepath.Join(dir, "zzz_newest.txt"), newest)
+
 	got, ok := walkNewestBounded(dir, time.Now().Add(-time.Hour), walkMaxEntries)
 	if !ok {
-		t.Fatal("expected a partial-but-valid result (found==true) after hitting the budget")
+		t.Fatal("expected a partial-but-valid result (found==true) after hitting the deadline")
+	}
+	if got.Equal(newest) {
+		t.Fatal("expired deadline did not stop the walk early: it reached the newest file")
 	}
 	if !got.Equal(base) {
-		t.Errorf("walkNewestBounded = %v, want %v", got, base)
+		t.Errorf("walkNewestBounded = %v, want %v (newest of the visited files)", got, base)
 	}
 
 	// A tight max-entries cap is the other bound; it must also return found==true.
