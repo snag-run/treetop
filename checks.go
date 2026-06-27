@@ -65,6 +65,8 @@ type ghRollupEntry struct {
 	Name         string `json:"name"`         // CheckRun: the job/check name
 	WorkflowName string `json:"workflowName"` // CheckRun: the workflow name
 	Context      string `json:"context"`      // StatusContext: the check name
+	DetailsURL   string `json:"detailsUrl"`   // CheckRun: link to the run/job page
+	TargetURL    string `json:"targetUrl"`    // StatusContext: link to the external check
 }
 
 // Check is a single CI check (one statusCheckRollup entry), retained for the
@@ -73,6 +75,7 @@ type ghRollupEntry struct {
 type Check struct {
 	Name  string
 	State CheckState
+	URL   string // link to the check's run page (detailsUrl/targetUrl); may be empty
 }
 
 // ghPR is one open pull request as returned by `gh pr list --json`.
@@ -82,6 +85,7 @@ type ghPR struct {
 	IsCrossRepository bool            `json:"isCrossRepository"`
 	IsDraft           bool            `json:"isDraft"`
 	ReviewDecision    string          `json:"reviewDecision"` // APPROVED/CHANGES_REQUESTED/REVIEW_REQUIRED, or "" when none required
+	URL               string          `json:"url"`            // the PR's html URL, for the clickable PR link
 	Rollup            []ghRollupEntry `json:"statusCheckRollup"`
 }
 
@@ -171,6 +175,17 @@ func checkName(e ghRollupEntry) string {
 	}
 }
 
+// checkURLOf picks a rollup entry's link: a CheckRun's detailsUrl (its GitHub
+// Actions run/job page) or a StatusContext's targetUrl (the external CI's page).
+// Either may be empty — not every check publishes a URL — in which case the
+// check's row simply isn't made clickable.
+func checkURLOf(e ghRollupEntry) string {
+	if e.DetailsURL != "" {
+		return e.DetailsURL
+	}
+	return e.TargetURL
+}
+
 // rollupChecks expands a PR's rollup entries into per-check rows for the --checks
 // view, sorted worst-first (failures lead) then by name. The ordering puts the
 // rows a user cares about on top and stays stable across refreshes so the
@@ -190,13 +205,16 @@ func rollupChecks(entries []ghRollupEntry) []Check {
 	byName := make(map[string]int, len(entries)) // name -> index in checks
 	checks := make([]Check, 0, len(entries))
 	for _, e := range entries {
-		name, state := checkName(e), checkStateOf(e)
+		name, state, url := checkName(e), checkStateOf(e), checkURLOf(e)
 		if i, ok := byName[name]; ok {
 			checks[i].State = max(checks[i].State, state) // worst wins
+			if checks[i].URL == "" {                      // keep the first link we saw
+				checks[i].URL = url
+			}
 			continue
 		}
 		byName[name] = len(checks)
-		checks = append(checks, Check{Name: name, State: state})
+		checks = append(checks, Check{Name: name, State: state, URL: url})
 	}
 	sort.SliceStable(checks, func(i, j int) bool {
 		if checks[i].State != checks[j].State {
@@ -212,6 +230,7 @@ func rollupChecks(entries []ghRollupEntry) []Check {
 // from one rollup, so they stay consistent and cost no extra gh call.
 type prStatus struct {
 	Number int
+	URL    string
 	State  CheckState
 	Review PRReview
 	Checks []Check
@@ -229,7 +248,7 @@ func ghFetchPRChecks(dir string) (map[string]prStatus, bool) {
 
 	cmd := exec.CommandContext(ctx, "gh", "pr", "list",
 		"--state", "open", "--limit", "100",
-		"--json", "number,headRefName,isCrossRepository,isDraft,reviewDecision,statusCheckRollup")
+		"--json", "number,url,headRefName,isCrossRepository,isDraft,reviewDecision,statusCheckRollup")
 	cmd.Dir = dir
 	// gh shells out to git to resolve the repo from its remote. Harden that child
 	// git the same way git.go does: a scanned repo is untrusted, and git runs
@@ -258,6 +277,7 @@ func ghFetchPRChecks(dir string) (map[string]prStatus, bool) {
 		}
 		checks[pr.HeadRefName] = prStatus{
 			Number: pr.Number,
+			URL:    pr.URL,
 			State:  rollupCheckState(pr.Rollup),
 			Review: prReviewOf(pr),
 			Checks: rollupChecks(pr.Rollup),
@@ -342,6 +362,7 @@ func enrichPRChecks(projects []Project) (polled int) {
 					p.Worktrees[j].Check = s.State
 					p.Worktrees[j].Checks = s.Checks
 					p.Worktrees[j].PRNumber = s.Number
+					p.Worktrees[j].PRURL = s.URL
 					p.Worktrees[j].PRReview = s.Review
 					p.Worktrees[j].HasPR = true
 				}

@@ -109,6 +109,12 @@ func (r renderer) prCell(wt Worktree, width int) string {
 	if c := reviewColor(wt.PRReview); text != "" && c != "" {
 		cell = r.paint(c, text)
 	}
+	if text != "" {
+		// Link the "#123" to the PR. Padding stays outside so trailing spaces
+		// aren't part of the clickable target, and the plain-text width above is
+		// unaffected by the escapes.
+		cell = r.hyperlink(wt.PRURL, cell)
+	}
 	return cell + strings.Repeat(" ", pad)
 }
 
@@ -127,6 +133,43 @@ func (r renderer) paint(c, s string) string {
 		return s
 	}
 	return c + s + colReset
+}
+
+// hyperlink wraps text in an OSC 8 terminal hyperlink pointing at url, so a
+// capable terminal renders text as a clickable link while terminals that don't
+// understand OSC 8 just print text and silently drop the escapes (graceful
+// degradation — no feature detection needed). It is gated on r.color, the same
+// "this is an interactive terminal, escape sequences are welcome" signal that
+// guards ANSI colour, so piped or redirected output stays plain. An empty or
+// unsafe url (see safeURL) returns text unchanged: the link is best-effort
+// decoration, never a reason to emit a broken escape.
+//
+// How the link is activated (plain click, modifier-click, hover-highlight) is the
+// terminal's decision, not treetop's — OSC 8 only declares the target.
+func (r renderer) hyperlink(url, text string) string {
+	if !r.color || !safeURL(url) {
+		return text
+	}
+	// ESC ]8;;<url> ST  <text>  ESC ]8;; ST   (ST = ESC \)
+	return "\033]8;;" + url + "\033\\" + text + "\033]8;;\033\\"
+}
+
+// safeURL reports whether url is safe to embed in an OSC 8 hyperlink: an http or
+// https URL containing no control bytes. The guard matters because a check's
+// detailsUrl comes from GitHub's API and a PR's URL is derived from a branch name
+// — data treetop already treats as untrusted (see sanitizeDisplay) — so a stray
+// ESC or embedded string-terminator in the URL would break out of the escape into
+// raw terminal control. Anything failing the check is rendered as plain text.
+func safeURL(url string) bool {
+	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+		return false
+	}
+	for i := 0; i < len(url); i++ {
+		if url[i] < 0x20 || url[i] == 0x7f {
+			return false
+		}
+	}
+	return true
 }
 
 // sanitizeDisplay neutralises terminal control sequences that a malicious
@@ -246,7 +289,10 @@ func (r renderer) render(projects []Project, supported bool) {
 			} else if !supported {
 				marker = r.paint(colDim, "?")
 			}
-			status := r.statusCell(marker, r.checkGlyph(wt.HasPR, wt.Check))
+			// Link the rollup glyph to the PR (its checks tab is one hop away).
+			// hyperlink no-ops on a worktree with no PR, where PRURL is empty.
+			glyph := r.hyperlink(wt.PRURL, r.checkGlyph(wt.HasPR, wt.Check))
+			status := r.statusCell(marker, glyph)
 			path := sanitizeDisplay(r.shorten(wt.Path))
 			times := fmt.Sprintf("%-*s · %s", editW, editSegment(wt, now), changedSegment(wt, now))
 			// The PR column is shown only when something populates it; otherwise it
@@ -270,7 +316,9 @@ func (r renderer) render(projects []Project, supported bool) {
 // a PR with no individual checks) renders nothing.
 func (r renderer) renderCheckRows(wt Worktree) {
 	for _, c := range wt.Checks {
-		fmt.Fprintf(r.w, "        %s %s\n", r.checkGlyph(true, c.State), sanitizeDisplay(c.Name))
+		// Link the whole glyph+name as one target to its run page (detailsUrl).
+		body := r.checkGlyph(true, c.State) + " " + sanitizeDisplay(c.Name)
+		fmt.Fprintf(r.w, "        %s\n", r.hyperlink(c.URL, body))
 	}
 }
 

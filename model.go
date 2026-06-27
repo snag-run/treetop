@@ -15,6 +15,7 @@ type Worktree struct {
 	HasEdit  bool       // whether Edited could be determined
 	HasPR    bool       // an open PR was found for this branch (only set with --pr)
 	PRNumber int        // the open PR's number; meaningful only when HasPR
+	PRURL    string     // the open PR's html URL, for the clickable PR link; meaningful only when HasPR
 	PRReview PRReview   // the PR's review state, for colouring the number; meaningful only when HasPR
 	Check    CheckState // rolled-up CI status of that PR; meaningful only when HasPR
 	Checks   []Check    // per-check breakdown behind Check, for the --checks rows; nil otherwise

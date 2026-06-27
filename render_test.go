@@ -300,3 +300,102 @@ func TestRenderBlankLineBetweenProjects(t *testing.T) {
 		t.Errorf("expected a blank line before the second project:\n%q", out)
 	}
 }
+
+// osc8 builds the OSC 8 hyperlink opener for url, the substring a linked cell
+// must contain: ESC ]8;; <url> ST. Tests assert on this rather than the full
+// open+close pair so they stay readable.
+func osc8(url string) string { return "\033]8;;" + url + "\033\\" }
+
+// TestSafeURL asserts only control-free http(s) URLs are allowed into an OSC 8
+// escape; anything else (other schemes, an embedded ESC or string-terminator)
+// is rejected so a hostile URL can't break out of the sequence.
+func TestSafeURL(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		url  string
+		want bool
+	}{
+		{"https", "https://github.com/o/r/pull/1", true},
+		{"http", "http://example.com", true},
+		{"empty", "", false},
+		{"no scheme", "github.com/o/r/pull/1", false},
+		{"other scheme", "file:///etc/passwd", false},
+		{"javascript", "javascript:alert(1)", false},
+		{"embedded esc", "https://x/\033]8;;evil\033\\", false},
+		{"embedded newline", "https://x/\n", false},
+	} {
+		if got := safeURL(tc.url); got != tc.want {
+			t.Errorf("safeURL(%q) = %v, want %v", tc.url, got, tc.want)
+		}
+	}
+}
+
+// TestHyperlink asserts hyperlink wraps text in a full OSC 8 open/close pair when
+// colour is on and the URL is safe, and otherwise returns text untouched — for
+// colour off (non-interactive output) or an unsafe URL.
+func TestHyperlink(t *testing.T) {
+	url := "https://github.com/o/r/pull/7"
+	on := newRenderer(nil, true, false, true)
+	got := on.hyperlink(url, "#7")
+	want := osc8(url) + "#7" + "\033]8;;\033\\"
+	if got != want {
+		t.Errorf("hyperlink with colour on = %q, want %q", got, want)
+	}
+
+	off := newRenderer(nil, false, false, true)
+	if got := off.hyperlink(url, "#7"); got != "#7" {
+		t.Errorf("hyperlink with colour off should be plain, got %q", got)
+	}
+	if got := on.hyperlink("ftp://nope", "#7"); got != "#7" {
+		t.Errorf("hyperlink with unsafe URL should be plain, got %q", got)
+	}
+}
+
+// TestRenderHyperlinks asserts the PR number, the rollup glyph, and each --checks
+// row are emitted as OSC 8 links to their respective URLs, and that none of those
+// escapes appear when colour is off (so piped output stays clean).
+func TestRenderHyperlinks(t *testing.T) {
+	now := time.Now()
+	prURL := "https://github.com/snag-run/treetop/pull/42"
+	runURL := "https://github.com/snag-run/treetop/actions/runs/123"
+	wt := Worktree{
+		Path: "/wt", Branch: "feat", HasPR: true, PRNumber: 42, PRURL: prURL,
+		Check: StateFailure,
+		Checks: []Check{
+			{Name: "lint", State: StateFailure, URL: runURL},
+			{Name: "build", State: StateSuccess}, // no URL: row renders unlinked
+		},
+		Changed: now, HasTime: true, Edited: now, HasEdit: true,
+	}
+	projects := []Project{{Name: "snag", Worktrees: []Worktree{wt}}}
+
+	var on strings.Builder
+	r := newRenderer(&on, true, false, true)
+	r.checks = true
+	r.render(projects, true)
+	out := on.String()
+
+	if !strings.Contains(out, osc8(prURL)) {
+		t.Errorf("expected an OSC 8 link to the PR URL:\n%q", out)
+	}
+	// The PR URL links both the "#42" cell and the rollup glyph, so it opens twice.
+	if n := strings.Count(out, osc8(prURL)); n != 2 {
+		t.Errorf("expected PR URL linked twice (number + glyph), got %d:\n%q", n, out)
+	}
+	if !strings.Contains(out, osc8(runURL)+"") {
+		t.Errorf("expected an OSC 8 link to the check run URL:\n%q", out)
+	}
+	// A check with no URL still renders its name, just without a link wrapper.
+	if !strings.Contains(out, "build") {
+		t.Errorf("expected the unlinked check to still render:\n%q", out)
+	}
+
+	// Colour off: no OSC 8 escapes at all.
+	var off strings.Builder
+	ro := newRenderer(&off, false, false, true)
+	ro.checks = true
+	ro.render(projects, true)
+	if strings.Contains(off.String(), "\033]8;;") {
+		t.Errorf("no OSC 8 escapes should appear with colour off:\n%q", off.String())
+	}
+}
