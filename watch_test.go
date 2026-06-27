@@ -134,6 +134,21 @@ func TestWatchFooterFilterMode(t *testing.T) {
 	if strings.Contains(noBox, "/ filter") {
 		t.Errorf("CLI-filtered footer should hide the filter key: %q", noBox)
 	}
+
+	// The check-row toggle hint appears only when expansion is available, and
+	// flips wording with the current state.
+	noToggle := watchFooter(r, footerState{total: 3, viewport: 10, prExpandable: false})
+	if strings.Contains(noToggle, "checks") || strings.Contains(noToggle, "collapse") {
+		t.Errorf("toggle hint should be hidden when expansion is unavailable: %q", noToggle)
+	}
+	collapsed := watchFooter(r, footerState{total: 3, viewport: 10, prExpandable: true, checksExpanded: false})
+	if !strings.Contains(collapsed, "c checks") {
+		t.Errorf("collapsed state should advertise the expand key: %q", collapsed)
+	}
+	expanded := watchFooter(r, footerState{total: 3, viewport: 10, prExpandable: true, checksExpanded: true})
+	if !strings.Contains(expanded, "c collapse") {
+		t.Errorf("expanded state should advertise the collapse key: %q", expanded)
+	}
 }
 
 func TestHeaderLinesStaleness(t *testing.T) {

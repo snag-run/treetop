@@ -162,6 +162,44 @@ func TestRenderCheckRows(t *testing.T) {
 	}
 }
 
+// TestRenderCheckRowsGatedByProjectCount asserts that --checks expansion is
+// suppressed once more projects are shown than the poll cap — beyond it the CI
+// data is only partially populated, so a half-expanded wall of rows is worse than
+// the rollup glyph alone.
+func TestRenderCheckRowsGatedByProjectCount(t *testing.T) {
+	now := time.Now()
+	mkProject := func(name string) Project {
+		return Project{Name: name, Worktrees: []Worktree{{
+			Path: "/" + name, Branch: "feat", HasPR: true, Check: StateFailure,
+			Checks:  []Check{{Name: "lint-" + name, State: StateFailure}},
+			Changed: now, HasTime: true, Edited: now, HasEdit: true,
+		}}}
+	}
+
+	// Within the cap: the per-check row renders.
+	var within strings.Builder
+	r := newRenderer(&within, false, false, true)
+	r.checks = true
+	r.render([]Project{mkProject("a")}, true)
+	if !strings.Contains(within.String(), "lint-a") {
+		t.Errorf("within the cap, check rows should render:\n%s", within.String())
+	}
+
+	// Over the cap: no check rows, even with --checks on.
+	var over strings.Builder
+	overProjects := make([]Project, 0, maxPRPollProjects+1)
+	for i := 0; i <= maxPRPollProjects; i++ {
+		overProjects = append(overProjects, mkProject(string(rune('a'+i))))
+	}
+	r = newRenderer(&over, false, false, true)
+	r.checks = true
+	r.render(overProjects, true)
+	if strings.Contains(over.String(), "lint-") {
+		t.Errorf("over the cap (%d projects), check rows should be suppressed:\n%s",
+			len(overProjects), over.String())
+	}
+}
+
 // TestRenderBlankLineBetweenProjects asserts adjacent project groups are
 // separated by a blank line, but the first project gets no leading blank.
 func TestRenderBlankLineBetweenProjects(t *testing.T) {

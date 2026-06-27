@@ -164,6 +164,12 @@ func (r renderer) render(projects []Project, supported bool) {
 		}
 	}
 
+	// Per-check rows only expand when the view is narrowed to the set that
+	// actually gets CI data: polling caps at maxPRPollProjects, so beyond that the
+	// expansion would be half-populated and a wall of rows. Above the cap the
+	// header already nudges the user to narrow further (see prHeaderNote).
+	expand := r.checks && len(projects) <= maxPRPollProjects
+
 	for i, p := range projects {
 		if i > 0 {
 			// Blank line between projects so adjacent groups don't run together.
@@ -182,7 +188,7 @@ func (r renderer) render(projects []Project, supported bool) {
 			times := fmt.Sprintf("%-*s · %s", editW, editSegment(wt, now), changedSegment(wt, now))
 			fmt.Fprintf(r.w, "  %s %-*s  %-*s  %s\n",
 				status, pathW, path, refW, sanitizeDisplay(wt.Ref()), r.paint(colDim, times))
-			if r.checks {
+			if expand {
 				r.renderCheckRows(wt)
 			}
 		}

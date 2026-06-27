@@ -187,6 +187,14 @@ the rollup. It implies `--pr` (same `gh` polling and gating) and applies to the
 full view only — `--projects` stays one line per project. The per-check data
 rides along on the same `gh` call, so expanding costs no extra requests.
 
+In `--watch`, the `c` key toggles the expansion live (so you don't have to
+relaunch), with `--checks` just setting the initial state. Expansion is **gated
+to the poll cap**: it's only available once the view is narrowed to
+`maxPRPollProjects` (5) or fewer projects — the same set that actually gets CI
+data. Above the cap the `c` hint disappears and the header's "first 5 of N —
+narrow further" note nudges you to filter, rather than rendering a half-populated
+wall of rows.
+
 **Polling is gated to avoid a request storm.** Each polled project costs one `gh`
 call, so `--pr` only polls when the list is **filtered** (a pattern, the live `/`
 box, `--in-use`, or `--open`); an unfiltered `$HOME` scan would otherwise fire a

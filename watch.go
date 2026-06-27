@@ -114,7 +114,6 @@ func runWatch(opts options) {
 	go func() { <-sig; events <- event{kind: evQuit} }()
 
 	r := newRenderer(out, opts.color, opts.projectsOnly, opts.pr)
-	r.checks = opts.checks
 
 	snaps := make(chan snapshot, 1)
 	queries := make(chan string, 1)
@@ -127,6 +126,13 @@ func runWatch(opts options) {
 	var lastUpdate time.Time // when cur last changed, for the staleness indicator
 	offset := 0
 	var viewport, maxOffset int
+
+	// Check-row expansion state. checksExpanded is the user's intent (seeded by
+	// --checks); canExpand is whether the current view is narrow enough to honour
+	// it, recomputed each render. The 'c' key toggles intent only while expansion
+	// is available, so it reads as disabled when too many projects are in view.
+	checksExpanded := opts.checks
+	canExpand := false
 
 	// Live-filter state. filtering is true while the filter box is open for
 	// editing; query persists (and stays applied) after Enter until cleared.
@@ -161,6 +167,10 @@ func runWatch(opts options) {
 		if valid {
 			projects = filterByName(projects, patterns)
 		}
+		// Expansion is offered only when polling is active and the view is within
+		// the poll cap — the same condition behind the "first N projects" note, so
+		// above the cap the user is nudged to narrow rather than half-expand.
+		canExpand = opts.pr && prFilterActive(opts, query != "") && len(projects) <= maxPRPollProjects
 		header = headerLines(r, opts, projects, cur.supported, time.Since(lastUpdate), query != "")
 		switch {
 		case cur.err != nil:
@@ -172,6 +182,7 @@ func runWatch(opts options) {
 	}
 
 	render := func() {
+		r.checks = checksExpanded
 		header, body, valid := view()
 
 		_, rows, gerr := term.GetSize(int(os.Stdout.Fd()))
@@ -196,6 +207,7 @@ func runWatch(opts options) {
 		fmt.Fprint(out, watchFooter(r, footerState{
 			offset: offset, total: len(body), viewport: viewport,
 			filterable: filterable, filtering: filtering, query: query, validQuery: valid,
+			prExpandable: canExpand, checksExpanded: checksExpanded,
 		}))
 		out.Flush()
 	}
@@ -274,6 +286,10 @@ func runWatch(opts options) {
 			case '/':
 				if filterable {
 					filtering = true // open the filter box
+				}
+			case 'c':
+				if canExpand {
+					checksExpanded = !checksExpanded // toggle per-check rows
 				}
 			}
 		}
@@ -533,6 +549,8 @@ type footerState struct {
 	filtering               bool   // the filter box is open for editing
 	query                   string // active filter text (may be empty)
 	validQuery              bool   // whether query compiles as a regex
+	prExpandable            bool   // the 'c' check-row toggle is available (--pr, within the cap)
+	checksExpanded          bool   // per-check rows are currently expanded
 }
 
 // watchFooter renders the bottom status line (no trailing newline so the
@@ -557,10 +575,19 @@ func watchFooter(r renderer, s footerState) string {
 		return r.paint(colDim, line)
 	}
 	last := min(s.offset+s.viewport, s.total)
-	keys := "↑/↓ · PgUp/PgDn · g/G · q quit"
+	parts := []string{"↑/↓", "PgUp/PgDn", "g/G"}
 	if s.filterable {
-		keys = "↑/↓ · PgUp/PgDn · g/G · / filter · q quit"
+		parts = append(parts, "/ filter")
 	}
+	if s.prExpandable {
+		if s.checksExpanded {
+			parts = append(parts, "c collapse")
+		} else {
+			parts = append(parts, "c checks")
+		}
+	}
+	parts = append(parts, "q quit")
+	keys := strings.Join(parts, " · ")
 	line := fmt.Sprintf("  rows %d–%d of %d   %s", s.offset+1, last, s.total, keys)
 	if s.query != "" {
 		line += "   [/" + s.query + "]"
