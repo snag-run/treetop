@@ -113,7 +113,7 @@ func runWatch(opts options) {
 	signal.Notify(sig, watchSignals...)
 	go func() { <-sig; events <- event{kind: evQuit} }()
 
-	r := newRenderer(out, opts.color, opts.projectsOnly)
+	r := newRenderer(out, opts.color, opts.projectsOnly, opts.pr)
 
 	snaps := make(chan snapshot, 1)
 	queries := make(chan string, 1)
@@ -160,7 +160,7 @@ func runWatch(opts options) {
 		if valid {
 			projects = filterByName(projects, patterns)
 		}
-		header = headerLines(r, opts, projects, cur.supported, time.Since(lastUpdate))
+		header = headerLines(r, opts, projects, cur.supported, time.Since(lastUpdate), query != "")
 		switch {
 		case cur.err != nil:
 			body = []string{"  error: " + cur.err.Error()}
@@ -571,15 +571,16 @@ func watchFooter(r renderer, s footerState) string {
 // clear-and-reprint refresh loop with no scrolling.
 func runWatchPlain(opts options) {
 	out := bufio.NewWriter(os.Stdout)
-	r := newRenderer(out, opts.color, opts.projectsOnly)
+	r := newRenderer(out, opts.color, opts.projectsOnly, opts.pr)
 	ticker := time.NewTicker(time.Duration(opts.interval) * time.Second)
 	defer ticker.Stop()
 	tr := newTracker(inUseDecay)
 	for {
 		projects, _, supported, err := collect(opts, tr, nil)
 		fmt.Fprint(out, clearHome)
-		// collect ran synchronously just now, so the data is fresh (age 0).
-		for _, l := range headerLines(r, opts, projects, supported, 0) {
+		// collect ran synchronously just now, so the data is fresh (age 0). No live
+		// "/" filter in the plain (non-TTY) loop, so PR polling rides on CLI flags.
+		for _, l := range headerLines(r, opts, projects, supported, 0, false) {
 			fmt.Fprintln(out, l)
 		}
 		if err != nil {
@@ -596,7 +597,7 @@ func runWatchPlain(opts options) {
 // how long since the displayed snapshot was collected; when it runs well past
 // the refresh interval the title flags the data as stale, so an overdue or
 // stalled refresh isn't mistaken for fresh data.
-func headerLines(r renderer, opts options, projects []Project, supported bool, age time.Duration) []string {
+func headerLines(r renderer, opts options, projects []Project, supported bool, age time.Duration, prLiveActive bool) []string {
 	nProjects := len(projects)
 	nWorktrees, nInUse := 0, 0
 	for _, p := range projects {
@@ -625,12 +626,33 @@ func headerLines(r renderer, opts options, projects []Project, supported bool, a
 	summary := fmt.Sprintf("%s · %s · %s",
 		plural(nProjects, "project"), plural(nWorktrees, "worktree"), inUse)
 
-	return []string{
+	lines := []string{
 		r.paint(colBold, title),
 		r.paint(colDim, strings.Repeat("─", 48)),
 		summary,
-		"",
 	}
+	if note := prHeaderNote(opts, projects, prLiveActive); note != "" {
+		lines = append(lines, r.paint(colDim, note))
+	}
+	return append(lines, "")
+}
+
+// prHeaderNote returns a one-line status for the --pr feature, or "" when --pr is
+// off or there's nothing to say. It explains why glyphs are absent (polling is
+// dormant until the list is filtered) or partial (more projects matched than the
+// poll cap), so the empty/short column never looks like a bug. liveActive is
+// whether the watch-mode "/" filter currently holds a query.
+func prHeaderNote(opts options, projects []Project, liveActive bool) string {
+	if !opts.pr {
+		return ""
+	}
+	if !prFilterActive(opts, liveActive) {
+		return "PR checks: filter the list (pattern, /, --in-use/--open) to enable"
+	}
+	if n := len(projects); n > maxPRPollProjects {
+		return fmt.Sprintf("PR checks: first %d of %d projects — narrow further for the rest", maxPRPollProjects, n)
+	}
+	return ""
 }
 
 // plural formats a count with a naive singular/plural word.

@@ -43,9 +43,53 @@ func TestRenderStripsControlBytes(t *testing.T) {
 
 	for _, compact := range []bool{false, true} {
 		var b strings.Builder
-		newRenderer(&b, false, compact).render(projects, true)
+		newRenderer(&b, false, compact, false).render(projects, true)
 		if strings.ContainsRune(b.String(), '\x1b') {
 			t.Errorf("compact=%v: rendered output contains a raw ESC byte:\n%q", compact, b.String())
+		}
+	}
+}
+
+// TestRenderPRGlyphColumn asserts the --pr column renders the right coloured
+// glyph per state, a blank cell for a PR-less worktree, and nothing at all when
+// the column is off.
+func TestRenderPRGlyphColumn(t *testing.T) {
+	now := time.Now()
+	mk := func(branch string, hasPR bool, s CheckState) Worktree {
+		return Worktree{Path: "/" + branch, Branch: branch, HasPR: hasPR, Check: s,
+			Changed: now, HasTime: true, Edited: now, HasEdit: true}
+	}
+	projects := []Project{{Name: "snag", Worktrees: []Worktree{
+		mk("pass", true, StateSuccess),
+		mk("fail", true, StateFailure),
+		mk("run", true, StatePending),
+		mk("none", true, StateNeutral),
+		mk("nopr", false, StateNeutral),
+	}}}
+
+	// Column off: no glyphs, regardless of the worktrees' PR data.
+	var off strings.Builder
+	newRenderer(&off, false, false, false).render(projects, true)
+	for _, g := range []string{"✓", "✗", "○"} {
+		if strings.Contains(off.String(), g) {
+			t.Errorf("PR column off should not render glyph %q:\n%s", g, off.String())
+		}
+	}
+
+	// Column on, with colour: each state maps to its coloured glyph.
+	var on strings.Builder
+	newRenderer(&on, true, false, true).render(projects, true)
+	out := on.String()
+	for _, want := range []struct {
+		glyph, color string
+	}{
+		{"✓", colGreen},
+		{"✗", colRed},
+		{"●", colYellow}, // pending; the in-use marker also uses ● but is green
+		{"○", colDim},
+	} {
+		if !strings.Contains(out, want.color+want.glyph+colReset) {
+			t.Errorf("expected coloured glyph %q (%q):\n%s", want.glyph, want.color, out)
 		}
 	}
 }
@@ -61,7 +105,7 @@ func TestRenderBlankLineBetweenProjects(t *testing.T) {
 	}
 
 	var b strings.Builder
-	newRenderer(&b, false, false).render(projects, true)
+	newRenderer(&b, false, false, false).render(projects, true)
 	out := b.String()
 
 	if strings.HasPrefix(out, "\n") {

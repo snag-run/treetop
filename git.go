@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"os"
 	"os/exec"
+	"strings"
 )
 
 // gitHardenedArgs are config overrides prepended to every git invocation so a
@@ -18,6 +20,31 @@ import (
 // hostile repo is typically owned by the same user who runs treetop.
 var gitHardenedArgs = []string{
 	"-c", "core.fsmonitor=",
+}
+
+// hardenedGitEnv returns the current environment with GIT_CONFIG_* overrides that
+// force core.fsmonitor empty for any git process spawned by a child (notably gh,
+// which shells out to git to resolve a repo from its remote). It mirrors the
+// gitHardenedArgs defence — a scanned repo is untrusted and git runs
+// config-named programs during ordinary operations — for the case where we can't
+// inject -c flags directly. Any pre-existing GIT_CONFIG_COUNT/KEY/VALUE entries
+// are dropped first so ours are the authoritative set.
+func hardenedGitEnv() []string {
+	base := os.Environ()
+	out := make([]string, 0, len(base)+3)
+	for _, e := range base {
+		if strings.HasPrefix(e, "GIT_CONFIG_COUNT=") ||
+			strings.HasPrefix(e, "GIT_CONFIG_KEY_") ||
+			strings.HasPrefix(e, "GIT_CONFIG_VALUE_") {
+			continue
+		}
+		out = append(out, e)
+	}
+	return append(out,
+		"GIT_CONFIG_COUNT=1",
+		"GIT_CONFIG_KEY_0=core.fsmonitor",
+		"GIT_CONFIG_VALUE_0=",
+	)
 }
 
 // gitCommand builds `git -C dir <hardened> args...`. All of treetop's git calls
