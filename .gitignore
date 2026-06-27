@@ -5,3 +5,6 @@
 # go
 *.test
 *.out
+
+# in-use marker dropped by the hooks
+.treetop-inuse

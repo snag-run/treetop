@@ -84,6 +84,16 @@ func (r renderer) render(projects []Project, supported bool) {
 		}
 	}
 
+	// Width of the "edited …" segment, so the "changed …" segment lines up.
+	editW := 0
+	for _, p := range projects {
+		for _, wt := range p.Worktrees {
+			if n := len(editSegment(wt, now)); n > editW {
+				editW = n
+			}
+		}
+	}
+
 	for _, p := range projects {
 		fmt.Fprintln(r.w, r.paint(colBold, p.Name))
 		for _, wt := range p.Worktrees {
@@ -94,14 +104,27 @@ func (r renderer) render(projects []Project, supported bool) {
 				marker = r.paint(colDim, "?")
 			}
 			path := r.shorten(wt.Path)
-			changed := "—"
-			if wt.HasTime {
-				changed = humanizeSince(wt.Changed, now)
-			}
+			times := fmt.Sprintf("%-*s · %s", editW, editSegment(wt, now), changedSegment(wt, now))
 			fmt.Fprintf(r.w, "  %s %-*s  %-*s  %s\n",
-				marker, pathW, path, refW, wt.Ref(), r.paint(colDim, changed))
+				marker, pathW, path, refW, wt.Ref(), r.paint(colDim, times))
 		}
 	}
+}
+
+// editSegment renders the working-tree edit time, e.g. "edited 12s".
+func editSegment(wt Worktree, now time.Time) string {
+	if !wt.HasEdit {
+		return "edited —"
+	}
+	return "edited " + humanizeShort(wt.Edited, now)
+}
+
+// changedSegment renders the git-activity time, e.g. "changed 5m".
+func changedSegment(wt Worktree, now time.Time) string {
+	if !wt.HasTime {
+		return "changed —"
+	}
+	return "changed " + humanizeShort(wt.Changed, now)
 }
 
 // renderCompact prints one line per project: in-use marker, name, a
@@ -118,14 +141,17 @@ func (r renderer) renderCompact(projects []Project, supported bool) {
 
 	for _, p := range projects {
 		nWorktrees, nInUse := len(p.Worktrees), 0
-		var latest time.Time
-		hasTime := false
+		var edited, changed time.Time
+		var hasEdit, hasChanged bool
 		for _, wt := range p.Worktrees {
 			if wt.InUse {
 				nInUse++
 			}
-			if wt.HasTime && wt.Changed.After(latest) {
-				latest, hasTime = wt.Changed, true
+			if wt.HasEdit && wt.Edited.After(edited) {
+				edited, hasEdit = wt.Edited, true
+			}
+			if wt.HasTime && wt.Changed.After(changed) {
+				changed, hasChanged = wt.Changed, true
 			}
 		}
 
@@ -143,13 +169,18 @@ func (r renderer) renderCompact(projects []Project, supported bool) {
 			count = plural(nWorktrees, "worktree")
 		}
 
-		changed := "—"
-		if hasTime {
-			changed = humanizeSince(latest, now)
+		// Surface the most recent edit across the project, falling back to git
+		// activity when nothing has been edited on disk.
+		recent := "—"
+		switch {
+		case hasEdit:
+			recent = "edited " + humanizeShort(edited, now)
+		case hasChanged:
+			recent = "changed " + humanizeShort(changed, now)
 		}
 
 		pad := strings.Repeat(" ", nameW-len(p.Name))
 		fmt.Fprintf(r.w, "  %s %s%s  %-13s  %s\n",
-			marker, r.paint(colBold, p.Name), pad, count, r.paint(colDim, changed))
+			marker, r.paint(colBold, p.Name), pad, count, r.paint(colDim, recent))
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 )
 
 const usage = `treetop - track git worktrees across projects
@@ -26,8 +27,9 @@ Flags:
   --no-color             disable ANSI color
   -h, --help             show this help
 
-In-use detection is best-effort and Linux-only (reads /proc). It finds
-top-level claude sessions; it cannot see in-process subagents.
+In-use detection combines a best-effort /proc scan (Linux-only: live claude
+sessions, including subagents via open files) with a .treetop-inuse marker file
+that any platform can drop. See the README for the subagent hooks.
 `
 
 type options struct {
@@ -120,7 +122,7 @@ func main() {
 }
 
 func runOnce(opts options) error {
-	projects, supported, err := collect(opts)
+	projects, supported, err := collect(opts, newTracker(inUseDecay))
 	if err != nil {
 		return err
 	}
@@ -128,15 +130,21 @@ func runOnce(opts options) error {
 	return nil
 }
 
-// collect discovers projects, marks in-use worktrees, and applies filters.
-// The bool reports whether session detection is supported on this platform.
-func collect(opts options) ([]Project, bool, error) {
+// inUseDecay is how long a worktree stays marked in-use after its session
+// signal last appeared, smoothing over transient open file descriptors.
+const inUseDecay = 30 * time.Second
+
+// collect discovers projects, marks in-use worktrees, and applies filters. The
+// tracker carries in-use decay state across refreshes (in watch mode the caller
+// reuses one tracker; a fresh one makes decay a no-op for snapshots). The bool
+// reports whether /proc session detection is supported on this platform.
+func collect(opts options, tr *tracker) ([]Project, bool, error) {
 	projects, err := discoverProjects(opts.roots)
 	if err != nil {
 		return nil, false, err
 	}
 	scan := scanSessions()
-	scan.markInUse(projects)
+	scan.markInUse(tr, projects)
 	return filterProjects(projects, opts), scan.supported, nil
 }
 
