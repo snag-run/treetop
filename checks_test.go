@@ -34,6 +34,8 @@ func TestCheckStateOf(t *testing.T) {
 		{"actions failure", ghRollupEntry{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "FAILURE"}, StateFailure},
 		{"actions timed out", ghRollupEntry{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "TIMED_OUT"}, StateFailure},
 		{"actions action required", ghRollupEntry{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "ACTION_REQUIRED"}, StateFailure},
+		{"actions startup failure", ghRollupEntry{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "STARTUP_FAILURE"}, StateFailure},
+		{"actions stale stays neutral", ghRollupEntry{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "STALE"}, StateNeutral},
 		{"actions skipped", ghRollupEntry{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "SKIPPED"}, StateNeutral},
 		{"actions neutral", ghRollupEntry{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "NEUTRAL"}, StateNeutral},
 		{"status context success", ghRollupEntry{Typename: "StatusContext", State: "SUCCESS"}, StateSuccess},

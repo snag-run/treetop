@@ -63,9 +63,10 @@ type ghRollupEntry struct {
 
 // ghPR is one open pull request as returned by `gh pr list --json`.
 type ghPR struct {
-	Number      int             `json:"number"`
-	HeadRefName string          `json:"headRefName"`
-	Rollup      []ghRollupEntry `json:"statusCheckRollup"`
+	Number            int             `json:"number"`
+	HeadRefName       string          `json:"headRefName"`
+	IsCrossRepository bool            `json:"isCrossRepository"`
+	Rollup            []ghRollupEntry `json:"statusCheckRollup"`
 }
 
 // checkStateOf normalises a single rollup entry into a CheckState, folding the
@@ -81,13 +82,13 @@ func checkStateOf(e ghRollupEntry) CheckState {
 		v = e.State // StatusContext (or a CheckRun with an unexpected empty conclusion)
 	}
 	switch v {
-	case "FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED":
+	case "FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE":
 		return StateFailure
 	case "PENDING", "QUEUED", "IN_PROGRESS", "EXPECTED":
 		return StatePending
 	case "SUCCESS":
 		return StateSuccess
-	default: // SKIPPED, NEUTRAL, or anything unrecognised
+	default: // SKIPPED, NEUTRAL, STALE, or anything unrecognised
 		return StateNeutral
 	}
 }
@@ -117,7 +118,7 @@ func ghFetchPRChecks(dir string) (map[string]CheckState, bool) {
 
 	cmd := exec.CommandContext(ctx, "gh", "pr", "list",
 		"--state", "open", "--limit", "100",
-		"--json", "number,headRefName,statusCheckRollup")
+		"--json", "number,headRefName,isCrossRepository,statusCheckRollup")
 	cmd.Dir = dir
 	// gh shells out to git to resolve the repo from its remote. Harden that child
 	// git the same way git.go does: a scanned repo is untrusted, and git runs
@@ -135,6 +136,13 @@ func ghFetchPRChecks(dir string) (map[string]CheckState, bool) {
 	checks := make(map[string]CheckState, len(prs))
 	for _, pr := range prs {
 		if pr.HeadRefName == "" {
+			continue
+		}
+		// Map by head branch only. A local worktree's branch lives in this repo,
+		// so its PR is a same-repo one; skipping cross-repository PRs (from forks)
+		// both matches that intent and avoids a branch-name collision overwriting
+		// the right PR — GitHub allows only one open PR per same-repo head branch.
+		if pr.IsCrossRepository {
 			continue
 		}
 		checks[pr.HeadRefName] = rollupCheckState(pr.Rollup)

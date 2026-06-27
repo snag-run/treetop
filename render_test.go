@@ -92,6 +92,24 @@ func TestRenderPRGlyphColumn(t *testing.T) {
 			t.Errorf("expected coloured glyph %q (%q):\n%s", want.glyph, want.color, out)
 		}
 	}
+
+	// Compact (--projects) view: the project rolls up worst-wins, so the mix above
+	// (which includes a failure) must render the red ✗ on the single project line.
+	var comp strings.Builder
+	newRenderer(&comp, true, true, true).render(projects, true)
+	if cs := comp.String(); !strings.Contains(cs, colRed+"✗"+colReset) {
+		t.Errorf("compact view should roll up to the worst (✗) glyph:\n%s", cs)
+	}
+
+	// Compact with no PRs anywhere: a blank cell, no glyph.
+	noPR := []Project{{Name: "x", Worktrees: []Worktree{mk("a", false, StateNeutral)}}}
+	var compNone strings.Builder
+	newRenderer(&compNone, false, true, true).render(noPR, true)
+	for _, g := range []string{"✓", "✗", "○", "●"} {
+		if strings.Contains(compNone.String(), g) {
+			t.Errorf("compact view with no PRs should render no glyph %q:\n%s", g, compNone.String())
+		}
+	}
 }
 
 // TestRenderBlankLineBetweenProjects asserts adjacent project groups are
