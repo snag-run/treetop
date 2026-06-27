@@ -54,19 +54,20 @@ release, download the prebuilt binary from the GitHub release instead.
    treetop --version
    ```
 
-   A plain `go build` of the checked-out tree usually prints `treetop dev`
-   (the module version reads as `(devel)`, so the binary falls back to the
-   default). You may instead see a pseudo-version like
-   `v0.2.1-0.20260627215520-f8b480f055da` when Go can resolve one. Either way,
-   confirm the binary now resolves to the path you installed
-   (`command -v treetop`) and report the version back to the user.
+   A source build stamps a pseudo-version from Go's VCS build info, like
+   `v0.2.1-0.20260627222925-71b992a2a45a` — the trailing short commit
+   (`71b992a`) is the `HEAD` you built from, so it confirms the update took. It
+   only falls back to `treetop dev` when the build carries no VCS info (built
+   outside the git checkout, or with `-buildvcs=false`). Also confirm the binary
+   resolves to the path you installed (`command -v treetop`), and report the
+   version back to the user.
 
 ## Platform notes
 
 - `/usr/local/bin` typically needs `sudo` on Linux and on Intel macOS.
 - Homebrew on Apple Silicon uses `/opt/homebrew/bin`, which is usually
   user-writable — no `sudo` needed there.
-- The version string comes from Go build info (`main.go`). A local `go build`
-  of the checked-out tree typically reports `dev` (module version `(devel)`);
-  only tagged release builds carry a real `vX.Y.Z`. That's expected for a dev
-  install — no extra `-ldflags` are needed.
+- The version string comes from Go build info (`main.go`): a plain `go build`
+  in the checkout already stamps the commit as a pseudo-version, so no extra
+  `-ldflags` are needed for a local install. Tagged release builds carry a real
+  `vX.Y.Z` instead.
