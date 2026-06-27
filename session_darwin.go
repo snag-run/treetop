@@ -66,7 +66,17 @@ func pidIsAgent(pid int) bool {
 	if err != nil {
 		return false // pid gone, or ps unavailable: don't honour the marker
 	}
-	command := strings.TrimSpace(string(out))
+	return commandIsAgent(string(out))
+}
+
+// commandIsAgent reports whether a `ps` command column (a full argv) belongs to
+// an agent process, matching on the argv[0] base name or a node command line
+// mentioning claude. argv0 is taken as the command up to its first space, so an
+// executable whose own path contains a space could be misclassified — vanishingly
+// rare for the node/claude binaries this targets, and any miss is still covered
+// by the .treetop-inuse marker file.
+func commandIsAgent(command string) bool {
+	command = strings.TrimSpace(command)
 	if command == "" {
 		return false
 	}
@@ -78,13 +88,8 @@ func pidIsAgent(pid int) bool {
 }
 
 // parsePSAgents extracts the pids of agent processes from `ps -o pid=,command=`
-// output. Each line is "<pid> <command line>"; a process counts when its argv[0]
-// base name (or a node command line mentioning claude) looks like an agent.
-//
-// argv0 is taken as the command up to its first space, so an executable whose
-// own path contains a space could be misclassified. That's vanishingly rare for
-// the node/claude binaries this targets (they live in PATH or under nvm/brew
-// prefixes), and any miss is still covered by the .treetop-inuse marker file.
+// output. Each line is "<pid> <command line>"; a process counts when commandIsAgent
+// matches its argv[0] base name (or a node command line mentioning claude).
 func parsePSAgents(out []byte) []string {
 	var pids []string
 	for _, line := range strings.Split(string(out), "\n") {
@@ -100,15 +105,7 @@ func parsePSAgents(out []byte) []string {
 		if _, err := strconv.Atoi(pid); err != nil {
 			continue // leading token wasn't a pid
 		}
-		command := strings.TrimSpace(line[i:])
-		if command == "" {
-			continue
-		}
-		argv0 := command
-		if j := strings.IndexByte(command, ' '); j >= 0 {
-			argv0 = command[:j]
-		}
-		if agentName(filepath.Base(argv0), command) {
+		if commandIsAgent(line[i:]) {
 			pids = append(pids, pid)
 		}
 	}
