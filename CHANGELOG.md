@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.2.0](https://github.com/snag-run/treetop/compare/v0.1.1...v0.2.0) (2026-06-27)
+
+
+### Features
+
+* add --checks to expand per-check CI rows under each worktree ([#56](https://github.com/snag-run/treetop/issues/56)) ([181d010](https://github.com/snag-run/treetop/commit/181d010d0746f33c5a9eb0842543c490ae955a3e))
+* add --depth flag to scan nested repo layouts ([#50](https://github.com/snag-run/treetop/issues/50)) ([57a29d5](https://github.com/snag-run/treetop/commit/57a29d5349f7fa428b409b48bdb191323484a2c9))
+* add --pr glyph showing PR check status per worktree ([#54](https://github.com/snag-run/treetop/issues/54)) ([35d017c](https://github.com/snag-run/treetop/commit/35d017cee4f6838ffe8cf1f6782aac32136e308f))
+* add --version flag ([#27](https://github.com/snag-run/treetop/issues/27)) ([2bdc781](https://github.com/snag-run/treetop/commit/2bdc7818dc61c2668dcd250262f9ae1f6c7e2fa2))
+* add a blank line between projects in the table ([#53](https://github.com/snag-run/treetop/issues/53)) ([8c449c8](https://github.com/snag-run/treetop/commit/8c449c87786141ec2ec08f01886e4fd2b8b65fcb))
+* bound the walkNewest working-tree walk ([#44](https://github.com/snag-run/treetop/issues/44)) ([3bffa47](https://github.com/snag-run/treetop/commit/3bffa47f4826443e25ab5a28a137abdd57f56e1b))
+* distinguish filtered-to-empty from no worktrees in one-shot output ([#46](https://github.com/snag-run/treetop/issues/46)) ([9ac62ed](https://github.com/snag-run/treetop/commit/9ac62edaa9c7badd7c8fcd978a7aa620a292f268))
+* flag stale data in the watch-mode header ([#52](https://github.com/snag-run/treetop/issues/52)) ([dbd571b](https://github.com/snag-run/treetop/commit/dbd571bf5b38773998fc959baf150bfddbf94102))
+* note unsupported session detection in one-shot output ([#47](https://github.com/snag-run/treetop/issues/47)) ([e23062b](https://github.com/snag-run/treetop/commit/e23062b26504e93adedcfc5196214a38f198ab9b))
+* restore the terminal on SIGHUP/SIGQUIT in watch mode ([#51](https://github.com/snag-run/treetop/issues/51)) ([be5875d](https://github.com/snag-run/treetop/commit/be5875d0ca40930f2cda790073d9467b3d11c3a7))
+* show the open PR number on each worktree row ([#60](https://github.com/snag-run/treetop/issues/60)) ([daa19ff](https://github.com/snag-run/treetop/commit/daa19ff3e218efb9de82c1ac30754c144aec5d83))
+
+
+### Bug Fixes
+
+* bound git rev-parse and worktree-list calls with a timeout ([#41](https://github.com/snag-run/treetop/issues/41)) ([f7cab63](https://github.com/snag-run/treetop/commit/f7cab633a8fe86ea306fb37d0be75b3d23d235c7))
+* error out when no scan root can be resolved ([#43](https://github.com/snag-run/treetop/issues/43)) ([ac2ca04](https://github.com/snag-run/treetop/commit/ac2ca04e1ed2b8a3dea39f256850e81d9ab854e8)), closes [#33](https://github.com/snag-run/treetop/issues/33)
+* evict stale entries from the edit cache ([#42](https://github.com/snag-run/treetop/issues/42)) ([0422363](https://github.com/snag-run/treetop/commit/0422363dbf850b6cb163d6127de77625eb3d4fac))
+* require consent before install.sh edits the global gitignore ([#48](https://github.com/snag-run/treetop/issues/48)) ([33e9dc5](https://github.com/snag-run/treetop/commit/33e9dc586c58693805b29ec2aa0b64f06b117c3d))
+* verify a marker PID is still an agent before honoring it ([#49](https://github.com/snag-run/treetop/issues/49)) ([f0af503](https://github.com/snag-run/treetop/commit/f0af503adf9f04c8ab1ed458297675c4fd86318d))
+* warn when a --root is unreadable instead of skipping silently ([#45](https://github.com/snag-run/treetop/issues/45)) ([559c7d6](https://github.com/snag-run/treetop/commit/559c7d6096ed5cc2b1cf5b94006c41b72a2c00e9))
+
 ## [0.1.1](https://github.com/snag-run/treetop/compare/v0.1.0...v0.1.1) (2026-06-27)
 
 
