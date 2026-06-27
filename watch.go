@@ -35,7 +35,7 @@ func runWatch(opts options) {
 		os.Exit(0)
 	}()
 
-	r := newRenderer(out, opts.color)
+	r := newRenderer(out, opts.color, opts.projectsOnly)
 	ticker := time.NewTicker(time.Duration(opts.interval) * time.Second)
 	defer ticker.Stop()
 

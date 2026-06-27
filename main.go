@@ -19,6 +19,7 @@ Usage:
 Flags:
   -w, --watch            live mode: refresh continuously (like top)
   -i, --interval N       refresh interval in seconds with --watch (default 2)
+  -p, --projects         collapse to one line per project (no worktrees)
   --in-use               show only worktrees with a live session (in use)
   --open                 show only worktrees without a session (open)
   --root DIR             directory to scan for repos (repeatable; default: $HOME)
@@ -30,13 +31,14 @@ top-level claude sessions; it cannot see in-process subagents.
 `
 
 type options struct {
-	filter    string
-	watch     bool
-	interval  int
-	onlyInUse bool
-	onlyOpen  bool
-	roots     []string
-	color     bool
+	filter       string
+	watch        bool
+	interval     int
+	onlyInUse    bool
+	onlyOpen     bool
+	projectsOnly bool
+	roots        []string
+	color        bool
 }
 
 // stringSlice is a repeatable string flag.
@@ -50,12 +52,13 @@ func parseFlags(args []string) (options, error) {
 	fs.Usage = func() { fmt.Fprint(os.Stderr, usage) }
 
 	var (
-		watch     bool
-		interval  int
-		onlyInUse bool
-		onlyOpen  bool
-		noColor   bool
-		roots     stringSlice
+		watch        bool
+		interval     int
+		onlyInUse    bool
+		onlyOpen     bool
+		projectsOnly bool
+		noColor      bool
+		roots        stringSlice
 	)
 	fs.BoolVar(&watch, "watch", false, "")
 	fs.BoolVar(&watch, "w", false, "")
@@ -63,9 +66,9 @@ func parseFlags(args []string) (options, error) {
 	fs.IntVar(&interval, "interval", 2, "")
 	fs.IntVar(&interval, "i", 2, "")
 	fs.BoolVar(&onlyInUse, "in-use", false, "")
-	fs.BoolVar(&onlyInUse, "active", false, "") // hidden alias
 	fs.BoolVar(&onlyOpen, "open", false, "")
-	fs.BoolVar(&onlyOpen, "inactive", false, "") // hidden alias
+	fs.BoolVar(&projectsOnly, "projects", false, "")
+	fs.BoolVar(&projectsOnly, "p", false, "")
 	fs.BoolVar(&noColor, "no-color", false, "")
 	fs.Var(&roots, "root", "")
 
@@ -85,13 +88,14 @@ func parseFlags(args []string) (options, error) {
 	}
 
 	return options{
-		filter:    strings.Join(fs.Args(), " "),
-		watch:     watch,
-		interval:  interval,
-		onlyInUse: onlyInUse,
-		onlyOpen:  onlyOpen,
-		roots:     roots,
-		color:     !noColor && useColor(),
+		filter:       strings.Join(fs.Args(), " "),
+		watch:        watch,
+		interval:     interval,
+		onlyInUse:    onlyInUse,
+		onlyOpen:     onlyOpen,
+		projectsOnly: projectsOnly,
+		roots:        roots,
+		color:        !noColor && useColor(),
 	}, nil
 }
 
@@ -120,7 +124,7 @@ func runOnce(opts options) error {
 	if err != nil {
 		return err
 	}
-	newRenderer(os.Stdout, opts.color).render(projects, supported)
+	newRenderer(os.Stdout, opts.color, opts.projectsOnly).render(projects, supported)
 	return nil
 }
 

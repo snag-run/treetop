@@ -48,17 +48,30 @@ go build -o treetop .
 ```sh
 treetop                 # snapshot of every project's worktrees
 treetop snag            # filter to projects whose name contains "snag"
+treetop -p              # collapse to one line per project
 treetop -w              # live mode, refreshing every 2s
 treetop -w -i 5         # live mode, every 5s
+treetop -w -p           # live, collapsed to projects
 treetop --in-use        # only worktrees with a live session
 treetop --open          # only worktrees with no session
 treetop --root ~/code   # scan a specific directory (repeatable)
+```
+
+A collapsed (`-p`) view shows the worktree count, how many are in use, and the
+most recent change per project — handy when you have many projects:
+
+```
+$ treetop -p
+  ● snag      3/10 in use   29 minutes ago
+    athanor   0/7 in use    2 weeks ago
+    ...
 ```
 
 | Flag | Description |
 |------|-------------|
 | `-w`, `--watch` | Live mode: refresh continuously (also `--live`) |
 | `-i`, `--interval N` | Refresh interval in seconds (with `--watch`, default 2) |
+| `-p`, `--projects` | Collapse to one line per project (no worktrees) |
 | `--in-use` | Show only worktrees with a live session |
 | `--open` | Show only worktrees with no session |
 | `--root DIR` | Directory to scan for repos (repeatable; default `$HOME`) |

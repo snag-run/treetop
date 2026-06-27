@@ -18,14 +18,15 @@ const (
 
 // renderer writes project/worktree tables, optionally with ANSI color.
 type renderer struct {
-	w     io.Writer
-	color bool
-	home  string
+	w       io.Writer
+	color   bool
+	compact bool // one line per project, no worktree enumeration
+	home    string
 }
 
-func newRenderer(w io.Writer, color bool) renderer {
+func newRenderer(w io.Writer, color, compact bool) renderer {
 	home, _ := os.UserHomeDir()
-	return renderer{w: w, color: color, home: home}
+	return renderer{w: w, color: color, compact: compact, home: home}
 }
 
 func (r renderer) paint(c, s string) string {
@@ -48,6 +49,10 @@ func (r renderer) shorten(path string) string {
 func (r renderer) render(projects []Project, supported bool) {
 	if len(projects) == 0 {
 		fmt.Fprintln(r.w, "No worktrees found.")
+		return
+	}
+	if r.compact {
+		r.renderCompact(projects, supported)
 		return
 	}
 	now := time.Now()
@@ -82,5 +87,55 @@ func (r renderer) render(projects []Project, supported bool) {
 			fmt.Fprintf(r.w, "  %s %-*s  %-*s  %s\n",
 				marker, pathW, path, refW, wt.Ref(), r.paint(colDim, changed))
 		}
+	}
+}
+
+// renderCompact prints one line per project: in-use marker, name, a
+// worktree/in-use count, and the most recent change across its worktrees.
+func (r renderer) renderCompact(projects []Project, supported bool) {
+	now := time.Now()
+
+	nameW := 0
+	for _, p := range projects {
+		if n := len(p.Name); n > nameW {
+			nameW = n
+		}
+	}
+
+	for _, p := range projects {
+		nWorktrees, nInUse := len(p.Worktrees), 0
+		var latest time.Time
+		hasTime := false
+		for _, wt := range p.Worktrees {
+			if wt.InUse {
+				nInUse++
+			}
+			if wt.HasTime && wt.Changed.After(latest) {
+				latest, hasTime = wt.Changed, true
+			}
+		}
+
+		marker := " "
+		if nInUse > 0 {
+			marker = r.paint(colGreen, "●")
+		} else if !supported {
+			marker = r.paint(colDim, "?")
+		}
+
+		var count string
+		if supported {
+			count = fmt.Sprintf("%d/%d in use", nInUse, nWorktrees)
+		} else {
+			count = plural(nWorktrees, "worktree")
+		}
+
+		changed := "—"
+		if hasTime {
+			changed = humanizeSince(latest, now)
+		}
+
+		pad := strings.Repeat(" ", nameW-len(p.Name))
+		fmt.Fprintf(r.w, "  %s %s%s  %-13s  %s\n",
+			marker, r.paint(colBold, p.Name), pad, count, r.paint(colDim, changed))
 	}
 }
