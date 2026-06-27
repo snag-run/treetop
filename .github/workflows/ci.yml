@@ -6,9 +6,8 @@ on:
   pull_request:
 
 jobs:
-  # Detect whether anything other than Markdown docs changed. The build job
-  # always runs (so the required "build (…)" status checks always report), but
-  # the heavy Go steps are skipped for docs-only changes.
+  # Detect whether anything other than Markdown docs changed. Docs-only PRs
+  # skip the build matrix entirely, so no (billable) macOS runner is started.
   changes:
     runs-on: ubuntu-latest
     outputs:
@@ -25,6 +24,7 @@ jobs:
 
   build:
     needs: changes
+    if: needs.changes.outputs.code == 'true'
     # Run on Linux and macOS so the platform-specific session scan
     # (session_linux.go / session_darwin.go) is built and tested on both.
     strategy:
@@ -34,12 +34,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
-      - if: needs.changes.outputs.code == 'true'
-        uses: actions/setup-go@v6
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.26"
       - name: gofmt
-        if: needs.changes.outputs.code == 'true'
         run: |
           unformatted=$(gofmt -l .)
           if [ -n "$unformatted" ]; then
@@ -47,11 +45,32 @@ jobs:
             echo "$unformatted"
             exit 1
           fi
-      - if: needs.changes.outputs.code == 'true'
-        run: go vet ./...
-      - if: needs.changes.outputs.code == 'true'
-        run: go test ./...
-      - if: needs.changes.outputs.code == 'true'
-        run: go build ./...
-      - if: needs.changes.outputs.code != 'true'
-        run: echo "Docs-only change — skipping Go build/test."
+      - run: go vet ./...
+      - run: go test ./...
+      - run: go build ./...
+
+  # Single required status check. Passes when the build matrix succeeded, or
+  # was skipped for a docs-only change. This is the job to mark as required in
+  # branch protection (not the individual "build (…)" matrix contexts, which
+  # never report when the matrix job is skipped).
+  ci:
+    needs: [changes, build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify build result
+        run: |
+          changes='${{ needs.changes.result }}'
+          build='${{ needs.build.result }}'
+          echo "changes=$changes build=$build"
+          if [ "$changes" != "success" ]; then
+            echo "changes job did not succeed."
+            exit 1
+          fi
+          # "skipped" == docs-only change (allowed); "success" == real build passed.
+          if [ "$build" = "success" ] || [ "$build" = "skipped" ]; then
+            echo "CI gate passed."
+          else
+            echo "CI gate failed (build: $build)."
+            exit 1
+          fi
