@@ -54,6 +54,34 @@ func (r renderer) checkGlyph(has bool, state CheckState) string {
 	}
 }
 
+// prNumberSuffix renders the " #123" tag appended to a worktree's ref when the
+// --pr column is active and an open PR was found, empty otherwise — so a PR-less
+// worktree (or a run without --pr) keeps a bare ref.
+func (r renderer) prNumberSuffix(wt Worktree) string {
+	if !r.pr || !wt.HasPR || wt.PRNumber <= 0 {
+		return ""
+	}
+	return fmt.Sprintf(" #%d", wt.PRNumber)
+}
+
+// refCell renders a worktree's ref padded to width, with its PR-number suffix (if
+// any) dimmed. Padding is measured on the plain text — the suffix's dim escapes
+// would otherwise throw off a %-*s field — so the next column stays aligned with
+// or without a PR.
+func (r renderer) refCell(wt Worktree, width int) string {
+	ref := sanitizeDisplay(wt.Ref())
+	suffix := r.prNumberSuffix(wt)
+	pad := width - len(ref) - len(suffix)
+	if pad < 0 {
+		pad = 0
+	}
+	cell := ref
+	if suffix != "" {
+		cell += r.paint(colDim, suffix)
+	}
+	return cell + strings.Repeat(" ", pad)
+}
+
 // statusCell builds the leading status field: the in-use marker, plus the PR
 // glyph when the --pr column is active. Kept in one place so the full and
 // compact renderers stay aligned.
@@ -148,7 +176,7 @@ func (r renderer) render(projects []Project, supported bool) {
 			if n := len(sanitizeDisplay(r.shorten(wt.Path))); n > pathW {
 				pathW = n
 			}
-			if n := len(sanitizeDisplay(wt.Ref())); n > refW {
+			if n := len(sanitizeDisplay(wt.Ref())) + len(r.prNumberSuffix(wt)); n > refW {
 				refW = n
 			}
 		}
@@ -186,8 +214,8 @@ func (r renderer) render(projects []Project, supported bool) {
 			status := r.statusCell(marker, r.checkGlyph(wt.HasPR, wt.Check))
 			path := sanitizeDisplay(r.shorten(wt.Path))
 			times := fmt.Sprintf("%-*s · %s", editW, editSegment(wt, now), changedSegment(wt, now))
-			fmt.Fprintf(r.w, "  %s %-*s  %-*s  %s\n",
-				status, pathW, path, refW, sanitizeDisplay(wt.Ref()), r.paint(colDim, times))
+			fmt.Fprintf(r.w, "  %s %-*s  %s  %s\n",
+				status, pathW, path, r.refCell(wt, refW), r.paint(colDim, times))
 			if expand {
 				r.renderCheckRows(wt)
 			}
@@ -201,7 +229,7 @@ func (r renderer) render(projects []Project, supported bool) {
 // a PR with no individual checks) renders nothing.
 func (r renderer) renderCheckRows(wt Worktree) {
 	for _, c := range wt.Checks {
-		fmt.Fprintf(r.w, "      %s %s\n", r.checkGlyph(true, c.State), sanitizeDisplay(c.Name))
+		fmt.Fprintf(r.w, "        %s %s\n", r.checkGlyph(true, c.State), sanitizeDisplay(c.Name))
 	}
 }
 

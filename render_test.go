@@ -112,6 +112,40 @@ func TestRenderPRGlyphColumn(t *testing.T) {
 	}
 }
 
+// TestRenderPRNumber asserts the open PR's number renders as a dim suffix on the
+// ref when --pr is on, is absent for a PR-less worktree, and never shows when the
+// column is off — and that the column stays aligned across both.
+func TestRenderPRNumber(t *testing.T) {
+	now := time.Now()
+	mk := func(branch string, hasPR bool, n int) Worktree {
+		return Worktree{Path: "/" + branch, Branch: branch, HasPR: hasPR, PRNumber: n,
+			Check: StateSuccess, Changed: now, HasTime: true, Edited: now, HasEdit: true}
+	}
+	projects := []Project{{Name: "snag", Worktrees: []Worktree{
+		mk("withpr", true, 56),
+		mk("nopr", false, 0),
+	}}}
+
+	// --pr on: the PR number renders as a dim suffix on the ref; the PR-less
+	// worktree gets none.
+	var on strings.Builder
+	newRenderer(&on, true, false, true).render(projects, true)
+	out := on.String()
+	if !strings.Contains(out, colDim+" #56"+colReset) {
+		t.Errorf("expected dim PR-number suffix #56:\n%s", out)
+	}
+	if strings.Count(out, "#") != 1 {
+		t.Errorf("only the worktree with a PR should show a number:\n%s", out)
+	}
+
+	// --pr off: no number even though the data carries one.
+	var off strings.Builder
+	newRenderer(&off, false, false, false).render(projects, true)
+	if strings.Contains(off.String(), "#56") {
+		t.Errorf("PR number should not render with --pr off:\n%s", off.String())
+	}
+}
+
 // TestRenderCheckRows asserts that --checks expands one coloured row per CI check
 // beneath a worktree, that the rows are off without the flag, and that a worktree
 // with no PR contributes no rows.

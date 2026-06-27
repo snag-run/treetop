@@ -159,10 +159,11 @@ func rollupChecks(entries []ghRollupEntry) []Check {
 	return checks
 }
 
-// prStatus is a branch's PR check status: the rolled-up state behind the glyph
-// plus the individual checks behind the --checks rows. Both are derived from one
-// rollup, so they stay consistent and the per-check detail costs no extra gh call.
+// prStatus is a branch's PR check status: the PR number, the rolled-up state
+// behind the glyph, and the individual checks behind the --checks rows. All come
+// from one rollup, so they stay consistent and cost no extra gh call.
 type prStatus struct {
+	Number int
 	State  CheckState
 	Checks []Check
 }
@@ -207,6 +208,7 @@ func ghFetchPRChecks(dir string) (map[string]prStatus, bool) {
 			continue
 		}
 		checks[pr.HeadRefName] = prStatus{
+			Number: pr.Number,
 			State:  rollupCheckState(pr.Rollup),
 			Checks: rollupChecks(pr.Rollup),
 		}
@@ -289,6 +291,7 @@ func enrichPRChecks(projects []Project) (polled int) {
 				if s, ok := checks[p.Worktrees[j].Branch]; ok {
 					p.Worktrees[j].Check = s.State
 					p.Worktrees[j].Checks = s.Checks
+					p.Worktrees[j].PRNumber = s.Number
 					p.Worktrees[j].HasPR = true
 				}
 			}
