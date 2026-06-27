@@ -7,7 +7,13 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # Run on Linux and macOS so the platform-specific session scan
+    # (session_linux.go / session_darwin.go) is built and tested on both.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
