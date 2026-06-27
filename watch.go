@@ -8,6 +8,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"golang.org/x/term"
 )
@@ -23,11 +24,11 @@ const (
 	mouseOff     = "\033[?1006l\033[?1000l"
 )
 
-// event is a scroll/quit action derived from keyboard or mouse input.
-type event int
+// eventKind is a scroll/quit/edit action derived from keyboard or mouse input.
+type eventKind int
 
 const (
-	evQuit event = iota
+	evQuit eventKind = iota
 	evUp
 	evDown
 	evWheelUp
@@ -36,15 +37,33 @@ const (
 	evPageDown
 	evTop
 	evBottom
+	evRune      // a printable character (ch is set)
+	evEnter     // Return
+	evEsc       // Escape
+	evBackspace // Backspace / Delete
 )
+
+// event is a single decoded input. For evRune, ch holds the typed character;
+// the main loop decides whether a rune is a scroll command or filter text based
+// on whether the filter box is open, so the input reader stays mode-agnostic.
+type event struct {
+	kind eventKind
+	ch   rune
+}
 
 const wheelLines = 3 // lines scrolled per mouse-wheel notch
 
-// frame is a rendered snapshot of the dashboard data: header lines plus the
-// body (one line per worktree/project). It is produced off the input loop.
-type frame struct {
-	header []string
-	body   []string
+// escSeqTimeout is how long to wait for the rest of a possibly-fragmented escape
+// sequence before deciding a lone ESC byte was a standalone Escape keypress.
+const escSeqTimeout = 50 * time.Millisecond
+
+// snapshot is the latest collected dashboard data, delivered by the refresh
+// goroutine. Rendering (and live filtering) happens on the main loop so a typed
+// filter re-windows the cached snapshot instantly without waiting for a tick.
+type snapshot struct {
+	projects  []Project
+	supported bool
+	err       error
 }
 
 // runWatch renders a continuously-refreshing, scrollable dashboard until the
@@ -80,46 +99,130 @@ func runWatch(opts options) {
 	// SIGTERM still arrives in raw mode (Ctrl-C does not — it's read as a byte).
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-	go func() { <-sig; events <- evQuit }()
+	go func() { <-sig; events <- event{kind: evQuit} }()
 
 	r := newRenderer(out, opts.color, opts.projectsOnly)
 
-	frames := make(chan frame, 1)
+	snaps := make(chan snapshot, 1)
+	queries := make(chan string, 1)
 	done := make(chan struct{})
-	go refreshLoop(opts, r, frames, done)
+	go refreshLoop(opts, queries, snaps, done)
 	defer close(done)
 
-	cur := frame{body: []string{r.paint(colDim, "  loading…")}}
+	cur := snapshot{}
+	loading := true
 	offset := 0
 	var viewport, maxOffset int
 
+	// Live-filter state. filtering is true while the filter box is open for
+	// editing; query persists (and stays applied) after Enter until cleared.
+	// The box is disabled when CLI grep flags are in use — the filter is
+	// already pinned at launch, so an in-TUI filter would just be confusing.
+	filterable := len(opts.patterns) == 0
+	filtering := false
+	query := ""
+
+	// pushQuery hands the current filter to the refresh goroutine so it stops
+	// collecting filtered-out projects (drop-stale so a fast typist never blocks).
+	pushQuery := func() {
+		select {
+		case <-queries:
+		default:
+		}
+		select {
+		case queries <- query:
+		default:
+		}
+	}
+
+	// view applies the live filter to the latest snapshot, returning the
+	// header lines, body lines, and whether the current query is a valid regex.
+	view := func() (header, body []string, valid bool) {
+		if loading {
+			return nil, []string{r.paint(colDim, "  loading…")}, true
+		}
+		projects := cur.projects
+		patterns, err := compilePatterns([]string{query})
+		valid = err == nil
+		if valid {
+			projects = filterByName(projects, patterns)
+		}
+		header = headerLines(r, opts, projects, cur.supported)
+		switch {
+		case cur.err != nil:
+			body = []string{"  error: " + cur.err.Error()}
+		default:
+			body = r.bodyLines(projects, cur.supported)
+		}
+		return header, body, valid
+	}
+
 	render := func() {
+		header, body, valid := view()
+
 		_, rows, gerr := term.GetSize(int(os.Stdout.Fd()))
 		if gerr != nil || rows <= 0 {
 			rows = 24
 		}
-		viewport = rows - len(cur.header) - 1 // reserve one row for the footer
+		viewport = rows - len(header) - 1 // reserve one row for the footer
 		if viewport < 1 {
 			viewport = 1
 		}
-		maxOffset = max(0, len(cur.body)-viewport)
+		maxOffset = max(0, len(body)-viewport)
 		offset = clamp(offset, 0, maxOffset)
-		end := min(offset+viewport, len(cur.body))
+		end := min(offset+viewport, len(body))
 
 		fmt.Fprint(out, clearHome)
-		for _, l := range cur.header {
+		for _, l := range header {
 			fmt.Fprintf(out, "%s\r\n", l)
 		}
-		for _, l := range cur.body[offset:end] {
+		for _, l := range body[offset:end] {
 			fmt.Fprintf(out, "%s\r\n", l)
 		}
-		fmt.Fprint(out, scrollFooter(r, offset, len(cur.body), viewport))
+		fmt.Fprint(out, watchFooter(r, footerState{
+			offset: offset, total: len(body), viewport: viewport,
+			filterable: filterable, filtering: filtering, query: query, validQuery: valid,
+		}))
 		out.Flush()
 	}
 
-	// applyEvent updates scroll state; it returns true when the user quit.
+	// applyEvent updates scroll/filter state; it returns true when the user quit.
 	applyEvent := func(e event) bool {
-		switch e {
+		if filtering {
+			// In filter mode, printable keys edit the query; only a few keys
+			// (Enter/Esc/Ctrl-C and the scroll arrows/wheel) act as commands.
+			switch e.kind {
+			case evQuit:
+				return true
+			case evEnter:
+				filtering = false // keep the query applied
+			case evEsc:
+				filtering, query = false, "" // cancel and clear
+			case evBackspace:
+				query = trimLastRune(query)
+			case evRune:
+				query += string(e.ch)
+			case evUp:
+				offset--
+			case evDown:
+				offset++
+			case evWheelUp:
+				offset -= wheelLines
+			case evWheelDown:
+				offset += wheelLines
+			case evPageUp:
+				offset -= viewport
+			case evPageDown:
+				offset += viewport
+			case evTop:
+				offset = 0
+			case evBottom:
+				offset = maxOffset
+			}
+			return false
+		}
+
+		switch e.kind {
 		case evQuit:
 			return true
 		case evUp:
@@ -138,6 +241,27 @@ func runWatch(opts options) {
 			offset = 0
 		case evBottom:
 			offset = maxOffset
+		case evEsc:
+			query = "" // clear an applied filter
+		case evRune:
+			switch e.ch {
+			case 'q':
+				return true
+			case 'j':
+				offset++
+			case 'k':
+				offset--
+			case 'g':
+				offset = 0
+			case 'G':
+				offset = maxOffset
+			case ' ':
+				offset += viewport
+			case '/':
+				if filterable {
+					filtering = true // open the filter box
+				}
+			}
 		}
 		return false
 	}
@@ -145,9 +269,11 @@ func runWatch(opts options) {
 	render()
 	for {
 		select {
-		case cur = <-frames:
+		case cur = <-snaps:
+			loading = false
 			render()
 		case e := <-events:
+			prevQuery := query
 			if applyEvent(e) {
 				return
 			}
@@ -163,35 +289,44 @@ func runWatch(opts options) {
 					drained = true
 				}
 			}
+			if query != prevQuery {
+				pushQuery() // tell the collector to stop walking filtered-out projects
+			}
 			render()
 		}
 	}
 }
 
 // refreshLoop collects data on the configured interval and delivers the latest
-// frame to the main loop, dropping any stale undelivered frame so a slow
+// snapshot to the main loop, dropping any stale undelivered snapshot so a slow
 // consumer never makes the producer block.
-func refreshLoop(opts options, r renderer, out chan frame, done <-chan struct{}) {
+//
+// The active filter query arrives on queries; refreshLoop applies it during
+// discovery so filtered-out projects are never git-queried or walked, and
+// re-collects immediately when the query changes so broadening the filter
+// repopulates without waiting for the next tick. An invalid (partial) regex is
+// treated as no filter, so data stays available while the user is mid-type.
+func refreshLoop(opts options, queries <-chan string, out chan snapshot, done <-chan struct{}) {
 	ticker := time.NewTicker(time.Duration(opts.interval) * time.Second)
 	defer ticker.Stop()
 
 	// One tracker for the session, so in-use decay carries across refreshes.
 	tr := newTracker(inUseDecay)
+	query := ""
 
 	emit := func() {
-		projects, supported, err := collect(opts, tr)
-		f := frame{header: headerLines(r, opts, projects, supported)}
+		live, err := compilePatterns([]string{query})
 		if err != nil {
-			f.body = []string{"  error: " + err.Error()}
-		} else {
-			f.body = r.bodyLines(projects, supported)
+			live = nil // invalid regex: don't narrow the collected set
 		}
-		select { // drop a stale pending frame, then deliver the fresh one
+		projects, supported, cerr := collect(opts, tr, live)
+		s := snapshot{projects: projects, supported: supported, err: cerr}
+		select { // drop a stale pending snapshot, then deliver the fresh one
 		case <-out:
 		default:
 		}
 		select {
-		case out <- f:
+		case out <- s:
 		case <-done:
 		}
 	}
@@ -201,65 +336,140 @@ func refreshLoop(opts options, r renderer, out chan frame, done <-chan struct{})
 		select {
 		case <-ticker.C:
 			emit()
+		case q := <-queries:
+			if q != query {
+				query = q
+				emit() // re-collect now so the filtered set updates immediately
+			}
 		case <-done:
 			return
 		}
 	}
 }
 
-// readInput translates raw keyboard and SGR-mouse bytes into scroll events.
+// trimLastRune drops the final rune of s (correctly handling multi-byte runes).
+func trimLastRune(s string) string {
+	if s == "" {
+		return ""
+	}
+	_, size := utf8.DecodeLastRuneInString(s)
+	return s[:len(s)-size]
+}
+
+// readInput decodes raw keyboard and SGR-mouse bytes into events. Printable
+// characters become evRune so the main loop can treat them as scroll commands or
+// filter text depending on mode; Ctrl-C always quits. The reader is deliberately
+// mode-agnostic.
 func readInput(ch chan<- event) {
 	br := bufio.NewReader(os.Stdin)
+	send := func(k eventKind) { ch <- event{kind: k} }
 	for {
 		b, err := br.ReadByte()
 		if err != nil {
 			return
 		}
-		switch b {
-		case 'q', 3: // q or Ctrl-C
-			ch <- evQuit
-		case 'j':
-			ch <- evDown
-		case 'k':
-			ch <- evUp
-		case 'g':
-			ch <- evTop
-		case 'G':
-			ch <- evBottom
-		case ' ':
-			ch <- evPageDown
-		case 0x1b: // escape sequence
-			if b2, err := br.ReadByte(); err != nil {
-				return
-			} else if b2 != '[' {
-				continue
+		switch {
+		case b == 3: // Ctrl-C always quits, even in filter mode
+			send(evQuit)
+		case b == '\r' || b == '\n':
+			send(evEnter)
+		case b == 0x7f || b == 0x08: // Backspace / Delete
+			send(evBackspace)
+		case b == 0x1b: // Escape, alone or as a CSI sequence prefix
+			if b2, ok := nextEscByte(br); ok {
+				readEscape(b2, br, ch)
+			} else {
+				send(evEsc) // nothing followed within the window: a real Escape
 			}
-			b3, err := br.ReadByte()
-			if err != nil {
-				return
-			}
-			switch b3 {
-			case 'A':
-				ch <- evUp
-			case 'B':
-				ch <- evDown
-			case 'H':
-				ch <- evTop
-			case 'F':
-				ch <- evBottom
-			case '5':
-				br.ReadByte() // consume '~'
-				ch <- evPageUp
-			case '6':
-				br.ReadByte() // consume '~'
-				ch <- evPageDown
-			case '<': // SGR mouse: ESC [ < Cb ; Cx ; Cy (M|m)
-				if e, ok := parseMouse(br); ok {
-					ch <- e
-				}
+		case b >= 0x20 && b < 0x7f: // printable ASCII -> rune
+			ch <- event{kind: evRune, ch: rune(b)}
+		case b >= 0xc0: // start of a multi-byte UTF-8 rune
+			if r, ok := readRune(br, b); ok {
+				ch <- event{kind: evRune, ch: r}
 			}
 		}
 	}
+}
+
+// nextEscByte returns the byte following a just-read ESC, distinguishing a CSI
+// sequence (arrows, mouse) from a standalone Escape keypress. The remaining
+// sequence bytes usually arrive together, so a non-empty buffer means a
+// sequence; otherwise we wait briefly, since a sequence can be fragmented across
+// reads on slow links (e.g. SSH) and a premature decision would mis-read an
+// arrow key as Esc. If read deadlines aren't supported we fall back to the
+// buffer check, which never blocks on a true Escape.
+func nextEscByte(br *bufio.Reader) (byte, bool) {
+	if br.Buffered() > 0 {
+		b, err := br.ReadByte()
+		return b, err == nil
+	}
+	if err := os.Stdin.SetReadDeadline(time.Now().Add(escSeqTimeout)); err != nil {
+		return 0, false // deadlines unsupported: treat as a standalone Escape
+	}
+	defer os.Stdin.SetReadDeadline(time.Time{})
+	b, err := br.ReadByte()
+	return b, err == nil
+}
+
+// readEscape parses the body of a CSI escape sequence (the leading ESC and the
+// following byte b2 already consumed) into a scroll/mouse event. An ESC not
+// followed by '[' is treated as a standalone Escape.
+func readEscape(b2 byte, br *bufio.Reader, ch chan<- event) {
+	if b2 != '[' {
+		ch <- event{kind: evEsc}
+		return
+	}
+	b3, err := br.ReadByte()
+	if err != nil {
+		return
+	}
+	switch b3 {
+	case 'A':
+		ch <- event{kind: evUp}
+	case 'B':
+		ch <- event{kind: evDown}
+	case 'H':
+		ch <- event{kind: evTop}
+	case 'F':
+		ch <- event{kind: evBottom}
+	case '5':
+		br.ReadByte() // consume '~'
+		ch <- event{kind: evPageUp}
+	case '6':
+		br.ReadByte() // consume '~'
+		ch <- event{kind: evPageDown}
+	case '<': // SGR mouse: ESC [ < Cb ; Cx ; Cy (M|m)
+		if e, ok := parseMouse(br); ok {
+			ch <- e
+		}
+	}
+}
+
+// readRune reads the continuation bytes of a UTF-8 rune whose lead byte is b.
+func readRune(br *bufio.Reader, b byte) (rune, bool) {
+	n := 1
+	switch {
+	case b >= 0xf0:
+		n = 4
+	case b >= 0xe0:
+		n = 3
+	case b >= 0xc0:
+		n = 2
+	}
+	buf := make([]byte, n)
+	buf[0] = b
+	for i := 1; i < n; i++ {
+		c, err := br.ReadByte()
+		if err != nil {
+			return 0, false
+		}
+		buf[i] = c
+	}
+	r, size := utf8.DecodeRune(buf)
+	if r == utf8.RuneError && size <= 1 {
+		return 0, false
+	}
+	return r, true
 }
 
 // parseMouse reads an SGR mouse sequence body and returns a wheel event.
@@ -268,7 +478,7 @@ func parseMouse(br *bufio.Reader) (event, bool) {
 	for {
 		c, err := br.ReadByte()
 		if err != nil {
-			return 0, false
+			return event{}, false
 		}
 		if c == 'M' || c == 'm' {
 			break
@@ -281,22 +491,53 @@ func parseMouse(br *bufio.Reader) (event, bool) {
 	}
 	switch code {
 	case "64":
-		return evWheelUp, true
+		return event{kind: evWheelUp}, true
 	case "65":
-		return evWheelDown, true
+		return event{kind: evWheelDown}, true
 	}
-	return 0, false
+	return event{}, false
 }
 
-// scrollFooter renders the bottom status line (no trailing newline so the
-// alternate screen doesn't scroll by one row).
-func scrollFooter(r renderer, offset, total, viewport int) string {
-	if total == 0 {
-		return r.paint(colDim, "  no worktrees")
+// footerState is the input to the bottom status line.
+type footerState struct {
+	offset, total, viewport int
+	filterable              bool   // the live filter box is available (no CLI grep flags)
+	filtering               bool   // the filter box is open for editing
+	query                   string // active filter text (may be empty)
+	validQuery              bool   // whether query compiles as a regex
+}
+
+// watchFooter renders the bottom status line (no trailing newline so the
+// alternate screen doesn't scroll by one row). While the filter box is open it
+// shows the editable query and a cursor; otherwise it shows the scroll status,
+// with any applied filter appended.
+func watchFooter(r renderer, s footerState) string {
+	if s.filtering {
+		line := "  /" + s.query + "█" // block cursor
+		if !s.validQuery {
+			line += "  (invalid regex)"
+		} else {
+			line += "   enter apply · esc clear"
+		}
+		return r.paint(colDim, line)
 	}
-	last := min(offset+viewport, total)
-	return r.paint(colDim, fmt.Sprintf("  rows %d–%d of %d   ↑/↓ · PgUp/PgDn · g/G · q quit",
-		offset+1, last, total))
+	if s.total == 0 {
+		line := "  no matches"
+		if s.query == "" {
+			line = "  no worktrees"
+		}
+		return r.paint(colDim, line)
+	}
+	last := min(s.offset+s.viewport, s.total)
+	keys := "↑/↓ · PgUp/PgDn · g/G · q quit"
+	if s.filterable {
+		keys = "↑/↓ · PgUp/PgDn · g/G · / filter · q quit"
+	}
+	line := fmt.Sprintf("  rows %d–%d of %d   %s", s.offset+1, last, s.total, keys)
+	if s.query != "" {
+		line += "   [/" + s.query + "]"
+	}
+	return r.paint(colDim, line)
 }
 
 // runWatchPlain is the non-interactive fallback (stdin is not a TTY): a simple
@@ -308,7 +549,7 @@ func runWatchPlain(opts options) {
 	defer ticker.Stop()
 	tr := newTracker(inUseDecay)
 	for {
-		projects, supported, err := collect(opts, tr)
+		projects, supported, err := collect(opts, tr, nil)
 		fmt.Fprint(out, clearHome)
 		for _, l := range headerLines(r, opts, projects, supported) {
 			fmt.Fprintln(out, l)

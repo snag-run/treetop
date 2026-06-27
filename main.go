@@ -141,7 +141,7 @@ func main() {
 }
 
 func runOnce(opts options) error {
-	projects, supported, err := collect(opts, newTracker(inUseDecay))
+	projects, supported, err := collect(opts, newTracker(inUseDecay), nil)
 	if err != nil {
 		return err
 	}
@@ -157,8 +157,13 @@ const inUseDecay = 30 * time.Second
 // tracker carries in-use decay state across refreshes (in watch mode the caller
 // reuses one tracker; a fresh one makes decay a no-op for snapshots). The bool
 // reports whether live session detection is supported on this platform.
-func collect(opts options, tr *tracker) ([]Project, bool, error) {
-	projects, err := discoverProjects(opts.roots)
+//
+// live is an optional extra name filter (the live-mode filter box), AND'd with
+// the CLI patterns. Both are applied during discovery so filtered-out projects
+// are never git-queried or walked — not just hidden after the fact.
+func collect(opts options, tr *tracker, live []*regexp.Regexp) ([]Project, bool, error) {
+	keep := func(name string) bool { return keepName(opts.patterns, live, name) }
+	projects, err := discoverProjects(opts.roots, keep)
 	if err != nil {
 		return nil, false, err
 	}
@@ -196,6 +201,31 @@ func matchesName(patterns []*regexp.Regexp, name string) bool {
 		}
 	}
 	return false
+}
+
+// keepName reports whether a project name survives both filters: the CLI
+// patterns (cli) AND the live-mode filter box (live). Each filter matches when
+// it has no patterns, so an absent filter never excludes anything. This is the
+// predicate that lets discovery skip enrichment for filtered-out projects.
+func keepName(cli, live []*regexp.Regexp, name string) bool {
+	return matchesName(cli, name) && matchesName(live, name)
+}
+
+// filterByName keeps only projects whose name matches the patterns, reusing the
+// same case-insensitive regex matching as the CLI pattern args. With no
+// patterns every project is kept. Used by the live-mode filter box to narrow an
+// already-collected project set on top of any CLI-launch filters.
+func filterByName(projects []Project, patterns []*regexp.Regexp) []Project {
+	if len(patterns) == 0 {
+		return projects
+	}
+	out := make([]Project, 0, len(projects))
+	for _, p := range projects {
+		if matchesName(patterns, p.Name) {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // filterProjects applies the name filter and in-use/open mode, dropping
