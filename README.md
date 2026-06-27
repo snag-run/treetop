@@ -32,10 +32,11 @@ each [release](https://github.com/snag-run/treetop/releases/latest). Grab the on
 for your platform, drop it on your `PATH`, and make it executable:
 
 ```sh
-# Detects your platform: linux/darwin and amd64/arm64
-OS=$(uname -s | tr '[:upper:]' '[:lower:]')      # linux or darwin
+# Detect your platform (linux/darwin, amd64/arm64) and the latest release:
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
-VERSION=0.1.0
+VERSION=$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
+  https://github.com/snag-run/treetop/releases/latest | sed 's#.*/tag/v##')
 
 curl -fsSL -o treetop \
   "https://github.com/snag-run/treetop/releases/download/v${VERSION}/treetop_${VERSION}_${OS}_${ARCH}"
@@ -49,7 +50,7 @@ On macOS, Gatekeeper may quarantine the binary on first run; clear it with
 Verify the download against the published checksums (optional):
 
 ```sh
-curl -fsSL -O "https://github.com/snag-run/treetop/releases/download/v${VERSION}/SHA256SUMS"
+curl -fsSL -O "https://github.com/snag-run/treetop/releases/latest/download/SHA256SUMS"
 shasum -a 256 -c SHA256SUMS --ignore-missing
 ```
 
