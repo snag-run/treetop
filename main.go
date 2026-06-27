@@ -189,6 +189,9 @@ func runOnce(opts options) error {
 	r := newRenderer(os.Stdout, opts.color, opts.projectsOnly)
 	r.filterDesc = filterDescription(opts)
 	r.render(projects, supported)
+	if note := unsupportedSessionNote(supported); note != "" {
+		fmt.Fprintln(os.Stderr, note)
+	}
 	return nil
 }
 
@@ -216,6 +219,18 @@ func filterDescription(opts options) string {
 		parts = append(parts, label+strings.Join(pats, ", "))
 	}
 	return strings.Join(parts, " and ")
+}
+
+// unsupportedSessionNote returns a one-line note for one-shot output explaining
+// that live-session detection is unavailable on this platform (so the in-use
+// column shows "?"), or "" when detection is supported. It goes to stderr so a
+// piped stdout table stays clean. Watch mode shows an equivalent note in its
+// footer, so this path is one-shot only.
+func unsupportedSessionNote(supported bool) string {
+	if supported {
+		return ""
+	}
+	return `treetop: live-session detection is unavailable on this platform; the in-use column shows "?". Drop a .treetop-inuse marker file in a worktree to mark it in use.`
 }
 
 // inUseDecay is how long a worktree stays marked in-use after its session
