@@ -21,10 +21,19 @@ import (
 //	echo $PPID > <worktree>/.treetop-inuse   # on SubagentStart / PreToolUse
 //	rm -f       <worktree>/.treetop-inuse     # on SubagentStop
 //
-// When a PID is present the marker is honoured only while that process is
-// alive, so a crashed hook can't leave a worktree pinned in-use forever. With
-// no PID we fall back to a freshness window on the file's mtime.
+// When a PID is present the marker is honoured only while that process is both
+// alive and still looks like an agent session (see pidIsAgentFunc), so a crashed
+// hook can't leave a worktree pinned in-use forever — not even if the kernel
+// recycles the PID to an unrelated process. With no PID we fall back to a
+// freshness window on the file's mtime.
 const markerName = ".treetop-inuse"
+
+// pidIsAgentFunc verifies that a live marker PID still belongs to an agent
+// session, guarding against PID reuse. It's a package var so tests can swap in a
+// deterministic check; the real, platform-specific implementations live in
+// session_{linux,darwin,other}.go (the "other" build can't introspect processes
+// and always returns true, preserving existence-only behaviour there).
+var pidIsAgentFunc = pidIsAgent
 
 // markerTTL bounds how long a PID-less marker counts as live after its last
 // write, so a hook that forgets to clean up doesn't pin a worktree forever.
@@ -47,7 +56,9 @@ func markerActive(worktreePath string) bool {
 		return false
 	}
 	if pid, ok := firstLinePID(data); ok {
-		return pidAlive(pid)
+		// Honour the PID marker only while the process is alive AND still looks
+		// like an agent — guarding against a recycled PID pinning the worktree.
+		return pidAlive(pid) && pidIsAgentFunc(pid)
 	}
 	// No PID: trust the marker only while its mtime is recent — and not in the
 	// future, which would otherwise read as perpetually fresh.

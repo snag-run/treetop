@@ -15,6 +15,16 @@ func writeMarker(t *testing.T, dir, content string) {
 	}
 }
 
+// stubPIDIsAgent overrides the marker's PID identity check with a fixed result
+// for the duration of the test, so the PID code paths are deterministic without
+// depending on what the real process table looks like.
+func stubPIDIsAgent(t *testing.T, result bool) {
+	t.Helper()
+	prev := pidIsAgentFunc
+	pidIsAgentFunc = func(int) bool { return result }
+	t.Cleanup(func() { pidIsAgentFunc = prev })
+}
+
 func TestMarkerActive(t *testing.T) {
 	t.Run("absent", func(t *testing.T) {
 		if markerActive(t.TempDir()) {
@@ -22,16 +32,31 @@ func TestMarkerActive(t *testing.T) {
 		}
 	})
 
-	t.Run("live PID", func(t *testing.T) {
+	t.Run("live PID, verified agent", func(t *testing.T) {
 		dir := t.TempDir()
+		stubPIDIsAgent(t, true)
 		writeMarker(t, dir, strconv.Itoa(os.Getpid())+"\n")
 		if !markerActive(dir) {
-			t.Error("marker with our own (live) PID should be active")
+			t.Error("marker with a live, agent-verified PID should be active")
+		}
+	})
+
+	t.Run("live PID, not an agent", func(t *testing.T) {
+		dir := t.TempDir()
+		// A recycled PID points at a live but unrelated process: the identity
+		// check must reject it so the worktree isn't pinned in-use forever.
+		stubPIDIsAgent(t, false)
+		writeMarker(t, dir, strconv.Itoa(os.Getpid())+"\n")
+		if markerActive(dir) {
+			t.Error("marker whose live PID isn't an agent process should not be active")
 		}
 	})
 
 	t.Run("dead PID", func(t *testing.T) {
 		dir := t.TempDir()
+		// pidAlive short-circuits before the identity check; assert it stays
+		// inactive even when identity verification would pass.
+		stubPIDIsAgent(t, true)
 		writeMarker(t, dir, "999999\n")
 		if markerActive(dir) {
 			t.Error("marker with a dead PID should not be active")
