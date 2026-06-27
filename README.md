@@ -50,6 +50,11 @@ go build -o treetop .
   Scroll with the **mouse wheel**, **↑/↓** (or `j`/`k`), **PgUp/PgDn**, and
   **g**/**G** (top/bottom). Quit with **q** or **Ctrl-C**.
 
+  Press **`/`** to open a filter box and type to narrow the projects live —
+  using the same case-insensitive grep/regex syntax as the CLI pattern (so
+  `snag|athanor` alternation works). **Enter** keeps the filter applied while
+  you scroll, **Esc** clears it, **Backspace** edits.
+
 ```sh
 treetop                  # snapshot of every project's worktrees
 treetop snag             # filter to projects whose name matches "snag"

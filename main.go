@@ -198,6 +198,23 @@ func matchesName(patterns []*regexp.Regexp, name string) bool {
 	return false
 }
 
+// filterByName keeps only projects whose name matches the patterns, reusing the
+// same case-insensitive regex matching as the CLI pattern args. With no
+// patterns every project is kept. Used by the live-mode filter box to narrow an
+// already-collected project set on top of any CLI-launch filters.
+func filterByName(projects []Project, patterns []*regexp.Regexp) []Project {
+	if len(patterns) == 0 {
+		return projects
+	}
+	out := make([]Project, 0, len(projects))
+	for _, p := range projects {
+		if matchesName(patterns, p.Name) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 // filterProjects applies the name filter and in-use/open mode, dropping
 // projects that end up with no matching worktrees.
 func filterProjects(projects []Project, opts options) []Project {
