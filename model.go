@@ -8,11 +8,13 @@ type Worktree struct {
 	Branch   string // empty when Detached or Bare
 	Detached bool
 	Bare     bool
-	InUse    bool      // a live session (e.g. claude) is running here
-	Changed  time.Time // last git activity (commit/checkout/stage)
-	HasTime  bool      // whether Changed could be determined
-	Edited   time.Time // newest working-tree file mtime (unstaged edits included)
-	HasEdit  bool      // whether Edited could be determined
+	InUse    bool       // a live session (e.g. claude) is running here
+	Changed  time.Time  // last git activity (commit/checkout/stage)
+	HasTime  bool       // whether Changed could be determined
+	Edited   time.Time  // newest working-tree file mtime (unstaged edits included)
+	HasEdit  bool       // whether Edited could be determined
+	HasPR    bool       // an open PR was found for this branch (only set with --pr)
+	Check    CheckState // rolled-up CI status of that PR; meaningful only when HasPR
 }
 
 // Ref renders the human-readable branch / state of a worktree.

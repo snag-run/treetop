@@ -11,10 +11,12 @@ import (
 )
 
 const (
-	colReset = "\033[0m"
-	colGreen = "\033[32m"
-	colDim   = "\033[2m"
-	colBold  = "\033[1m"
+	colReset  = "\033[0m"
+	colGreen  = "\033[32m"
+	colRed    = "\033[31m"
+	colYellow = "\033[33m"
+	colDim    = "\033[2m"
+	colBold   = "\033[1m"
 )
 
 // renderer writes project/worktree tables, optionally with ANSI color.
@@ -22,13 +24,43 @@ type renderer struct {
 	w          io.Writer
 	color      bool
 	compact    bool // one line per project, no worktree enumeration
+	pr         bool // show the PR check-status glyph column (--pr)
 	home       string
 	filterDesc string // active filter description; empty means no filter
 }
 
-func newRenderer(w io.Writer, color, compact bool) renderer {
+func newRenderer(w io.Writer, color, compact, pr bool) renderer {
 	home, _ := os.UserHomeDir()
-	return renderer{w: w, color: color, compact: compact, home: home}
+	return renderer{w: w, color: color, compact: compact, pr: pr, home: home}
+}
+
+// checkGlyph renders a PR's CI status as a single coloured cell. has is whether a
+// PR was found at all; when false (no PR, or polling was off/capped out) a blank
+// cell keeps column alignment. Mirrors the glyph legend documented in the README.
+func (r renderer) checkGlyph(has bool, state CheckState) string {
+	if !has {
+		return " "
+	}
+	switch state {
+	case StateSuccess:
+		return r.paint(colGreen, "✓")
+	case StateFailure:
+		return r.paint(colRed, "✗")
+	case StatePending:
+		return r.paint(colYellow, "●")
+	default: // StateNeutral: a PR with only skipped/neutral checks, or none
+		return r.paint(colDim, "○")
+	}
+}
+
+// statusCell builds the leading status field: the in-use marker, plus the PR
+// glyph when the --pr column is active. Kept in one place so the full and
+// compact renderers stay aligned.
+func (r renderer) statusCell(marker, glyph string) string {
+	if !r.pr {
+		return marker
+	}
+	return marker + " " + glyph
 }
 
 func (r renderer) paint(c, s string) string {
@@ -144,10 +176,11 @@ func (r renderer) render(projects []Project, supported bool) {
 			} else if !supported {
 				marker = r.paint(colDim, "?")
 			}
+			status := r.statusCell(marker, r.checkGlyph(wt.HasPR, wt.Check))
 			path := sanitizeDisplay(r.shorten(wt.Path))
 			times := fmt.Sprintf("%-*s · %s", editW, editSegment(wt, now), changedSegment(wt, now))
 			fmt.Fprintf(r.w, "  %s %-*s  %-*s  %s\n",
-				marker, pathW, path, refW, sanitizeDisplay(wt.Ref()), r.paint(colDim, times))
+				status, pathW, path, refW, sanitizeDisplay(wt.Ref()), r.paint(colDim, times))
 		}
 	}
 }
@@ -202,6 +235,8 @@ func (r renderer) renderCompact(projects []Project, supported bool) {
 		} else if !supported {
 			marker = r.paint(colDim, "?")
 		}
+		prState, hasPR := projectWorstCheck(p)
+		status := r.statusCell(marker, r.checkGlyph(hasPR, prState))
 
 		var count string
 		if supported {
@@ -223,6 +258,6 @@ func (r renderer) renderCompact(projects []Project, supported bool) {
 		name := sanitizeDisplay(p.Name)
 		pad := strings.Repeat(" ", nameW-len(name))
 		fmt.Fprintf(r.w, "  %s %s%s  %-13s  %s\n",
-			marker, r.paint(colBold, name), pad, count, r.paint(colDim, recent))
+			status, r.paint(colBold, name), pad, count, r.paint(colDim, recent))
 	}
 }

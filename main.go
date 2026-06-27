@@ -47,6 +47,8 @@ Flags:
   -e, --regexp PATTERN   project-name pattern (repeatable; OR'd together)
   -i, --interval N       refresh interval in seconds with --watch (default 2)
   -p, --projects         collapse to one line per project (no worktrees)
+  --pr                   show a PR check-status glyph per worktree (needs gh;
+                         only polls when the list is filtered, max 5 projects)
   --in-use               show only worktrees with a live session (in use)
   --open                 show only worktrees without a session (open)
   --root DIR             directory to scan for repos (repeatable; default: $HOME)
@@ -68,6 +70,7 @@ type options struct {
 	onlyInUse    bool
 	onlyOpen     bool
 	projectsOnly bool
+	pr           bool
 	roots        []string
 	depth        int
 	color        bool
@@ -96,6 +99,7 @@ func parseFlags(args []string) (options, error) {
 		onlyInUse    bool
 		onlyOpen     bool
 		projectsOnly bool
+		pr           bool
 		noColor      bool
 		showVersion  bool
 		roots        stringSlice
@@ -112,6 +116,7 @@ func parseFlags(args []string) (options, error) {
 	fs.BoolVar(&onlyOpen, "open", false, "")
 	fs.BoolVar(&projectsOnly, "projects", false, "")
 	fs.BoolVar(&projectsOnly, "p", false, "")
+	fs.BoolVar(&pr, "pr", false, "")
 	fs.BoolVar(&noColor, "no-color", false, "")
 	fs.BoolVar(&showVersion, "version", false, "")
 	fs.BoolVar(&showVersion, "V", false, "")
@@ -162,6 +167,7 @@ func parseFlags(args []string) (options, error) {
 		onlyInUse:    onlyInUse,
 		onlyOpen:     onlyOpen,
 		projectsOnly: projectsOnly,
+		pr:           pr,
 		roots:        roots,
 		depth:        depth,
 		color:        !noColor && useColor(),
@@ -204,11 +210,15 @@ func runOnce(opts options) error {
 	for _, bad := range badRoots {
 		fmt.Fprintf(os.Stderr, "treetop: warning: cannot read root %s\n", bad)
 	}
-	r := newRenderer(os.Stdout, opts.color, opts.projectsOnly)
+	r := newRenderer(os.Stdout, opts.color, opts.projectsOnly, opts.pr)
 	r.filterDesc = filterDescription(opts)
 	r.render(projects, supported)
 	if note := unsupportedSessionNote(supported); note != "" {
 		fmt.Fprintln(os.Stderr, note)
+	}
+	// One-shot has no live "/" filter, so PR polling rides on the CLI filters.
+	if note := prHeaderNote(opts, projects, false); note != "" {
+		fmt.Fprintln(os.Stderr, "treetop: "+note)
 	}
 	return nil
 }
@@ -275,7 +285,15 @@ func collect(opts options, tr *tracker, live []*regexp.Regexp) (projects []Proje
 	}
 	scan := scanSessions()
 	scan.markInUse(tr, projects)
-	return filterProjects(projects, opts), badRoots, scan.supported, nil
+	projects = filterProjects(projects, opts)
+	// PR status is opt-in (--pr) and only polled when the list is narrowed, so an
+	// unfiltered $HOME scan never fans out a gh call per repo. Enrichment caps the
+	// number of projects polled and caches per repo, so it's safe on the refresh
+	// path; results land on the worktrees in place.
+	if shouldPollPR(opts, live) {
+		enrichPRChecks(projects)
+	}
+	return projects, badRoots, scan.supported, nil
 }
 
 // compilePatterns compiles each non-empty pattern into a case-insensitive

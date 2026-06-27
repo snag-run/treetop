@@ -8,7 +8,7 @@ import (
 
 func TestRenderEmptyNoFilter(t *testing.T) {
 	var b strings.Builder
-	r := newRenderer(&b, false, false)
+	r := newRenderer(&b, false, false, false)
 	r.render(nil, true)
 	if got := b.String(); !strings.Contains(got, "No worktrees found.") {
 		t.Errorf("empty render without a filter = %q, want \"No worktrees found.\"", got)
@@ -17,7 +17,7 @@ func TestRenderEmptyNoFilter(t *testing.T) {
 
 func TestRenderEmptyWithFilter(t *testing.T) {
 	var b strings.Builder
-	r := newRenderer(&b, false, false)
+	r := newRenderer(&b, false, false, false)
 	r.filterDesc = "--in-use"
 	r.render(nil, true)
 	got := b.String()

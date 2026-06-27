@@ -101,6 +101,7 @@ treetop -w -e snag -e athanor  # live mode, multiple projects
 treetop --in-use         # only worktrees with a live session
 treetop --open           # only worktrees with no session
 treetop --root ~/code    # scan a specific directory (repeatable)
+treetop --pr -e snag     # show PR check status (needs gh; needs a filter)
 ```
 
 The project filter is a **case-insensitive regular expression** matched against
@@ -123,6 +124,7 @@ $ treetop -p
 | `-w`, `--watch` | Live mode: refresh continuously (also `--live`) |
 | `-i`, `--interval N` | Refresh interval in seconds (with `--watch`, default 2) |
 | `-p`, `--projects` | Collapse to one line per project (no worktrees) |
+| `--pr` | Show a PR check-status glyph per worktree (needs `gh`; polls only when filtered, max 5 projects) |
 | `--in-use` | Show only worktrees with a live session |
 | `--open` | Show only worktrees with no session |
 | `--root DIR` | Directory to scan for repos (repeatable; default `$HOME`) |
@@ -143,6 +145,35 @@ never descended into, so the cost of a deeper scan is just the directory stats).
   `2d`). Shown as `—` when nothing is present (e.g. a bare repo).
 - **changed** — the most recent git activity in the worktree (commit / checkout
   / stage).
+
+## PR check status (`--pr`)
+
+With `--pr`, each worktree gets a glyph for the rolled-up CI status of the open
+pull request whose head is that worktree's branch. The status comes from the
+[`gh`](https://cli.github.com) CLI, so `gh` must be installed and authenticated.
+When `gh` is missing or unauthenticated, the column is blank (never an error) and
+the header says why — e.g. `PR checks: gh not authenticated — run gh auth login`.
+A repo with no GitHub remote stays quietly blank. In `--projects` view the glyph
+is the worst status across the project's worktrees.
+
+| Glyph | Meaning |
+|-------|---------|
+| `✓` (green) | all checks passed |
+| `✗` (red) | at least one check failed |
+| `●` (yellow) | at least one check still running / queued |
+| `○` (dim) | a PR with only skipped/neutral checks, or none configured |
+| (blank) | no open PR for this branch (or polling is off — see below) |
+
+The status folds **worst-wins**: one failing check among many passing ones shows
+`✗`. A PR with an empty check set is `○`, never `✓` — "no checks" is not "passing".
+
+**Polling is gated to avoid a request storm.** Each polled project costs one `gh`
+call, so `--pr` only polls when the list is **filtered** (a pattern, the live `/`
+box, `--in-use`, or `--open`); an unfiltered `$HOME` scan would otherwise fire a
+`gh` call per repo on every refresh. Even when filtered, at most **5 projects**
+are polled per refresh (the header says when more matched). Results are cached
+for ~15s, so in `--watch` the table keeps refreshing at its normal interval while
+`gh` is hit only occasionally.
 
 ## How in-use detection works (and its limits)
 
