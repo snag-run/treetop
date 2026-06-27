@@ -19,7 +19,8 @@ import (
 // a root's immediate children (the original behaviour), 2 also scans their
 // children, and so on — useful for nested layouts like ~/src/<host>/<org>/<repo>.
 // A repo is never descended into, so a depth larger than the layout costs only
-// the directory stats. depth < 1 is treated as 1.
+// the directory stats. depth is clamped to [1, maxScanDepth] so the cap is a
+// property of discovery itself, not just the CLI flag parser.
 //
 // keep filters projects by name *before* the expensive per-worktree enrichment
 // (git queries + working-tree walk in listWorktrees), so projects the caller has
@@ -35,6 +36,9 @@ import (
 func discoverProjects(roots []string, depth int, keep func(name string) bool) (projects []Project, badRoots []string, err error) {
 	if depth < 1 {
 		depth = 1
+	}
+	if depth > maxScanDepth {
+		depth = maxScanDepth
 	}
 	// Map from a repo's common git dir -> a known worktree path we can query.
 	seen := map[string]string{}
