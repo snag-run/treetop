@@ -49,3 +49,25 @@ func TestRenderStripsControlBytes(t *testing.T) {
 		}
 	}
 }
+
+// TestRenderBlankLineBetweenProjects asserts adjacent project groups are
+// separated by a blank line, but the first project gets no leading blank.
+func TestRenderBlankLineBetweenProjects(t *testing.T) {
+	now := time.Now()
+	wt := []Worktree{{Path: "/p", Changed: now, HasTime: true, Edited: now, HasEdit: true}}
+	projects := []Project{
+		{Name: "snag", Worktrees: wt},
+		{Name: "treetop", Worktrees: wt},
+	}
+
+	var b strings.Builder
+	newRenderer(&b, false, false).render(projects, true)
+	out := b.String()
+
+	if strings.HasPrefix(out, "\n") {
+		t.Errorf("first project should not be preceded by a blank line:\n%q", out)
+	}
+	if !strings.Contains(out, "\n\ntreetop\n") {
+		t.Errorf("expected a blank line before the second project:\n%q", out)
+	}
+}

@@ -131,7 +131,11 @@ func (r renderer) render(projects []Project, supported bool) {
 		}
 	}
 
-	for _, p := range projects {
+	for i, p := range projects {
+		if i > 0 {
+			// Blank line between projects so adjacent groups don't run together.
+			fmt.Fprintln(r.w)
+		}
 		fmt.Fprintln(r.w, r.paint(colBold, sanitizeDisplay(p.Name)))
 		for _, wt := range p.Worktrees {
 			marker := " "
