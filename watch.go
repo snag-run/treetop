@@ -66,12 +66,12 @@ func leaveAltScreen(out *bufio.Writer) {
 // drawHeader prints the dashboard title line and a live summary of counts.
 func drawHeader(out *bufio.Writer, r renderer, opts options, projects []Project, supported bool) {
 	nProjects := len(projects)
-	nWorktrees, nActive := 0, 0
+	nWorktrees, nInUse := 0, 0
 	for _, p := range projects {
 		nWorktrees += len(p.Worktrees)
 		for _, w := range p.Worktrees {
-			if w.Active {
-				nActive++
+			if w.InUse {
+				nInUse++
 			}
 		}
 	}
@@ -79,14 +79,14 @@ func drawHeader(out *bufio.Writer, r renderer, opts options, projects []Project,
 	title := fmt.Sprintf("treetop  %s  (every %ds · Ctrl-C to exit)",
 		time.Now().Format("15:04:05"), opts.interval)
 
-	active := fmt.Sprintf("%d active", nActive)
+	inUse := fmt.Sprintf("%d in use", nInUse)
 	if supported {
-		active = r.paint(colGreen, "● ") + active
+		inUse = r.paint(colGreen, "● ") + inUse
 	} else {
-		active = r.paint(colDim, "? sessions unknown (Linux only)")
+		inUse = r.paint(colDim, "? sessions unknown (Linux only)")
 	}
 	summary := fmt.Sprintf("%s · %s · %s",
-		plural(nProjects, "project"), plural(nWorktrees, "worktree"), active)
+		plural(nProjects, "project"), plural(nWorktrees, "worktree"), inUse)
 
 	fmt.Fprintln(out, r.paint(colBold, title))
 	fmt.Fprintln(out, r.paint(colDim, strings.Repeat("─", 48)))

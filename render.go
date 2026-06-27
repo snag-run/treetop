@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const (
@@ -43,19 +44,23 @@ func (r renderer) shorten(path string) string {
 }
 
 // render prints the projects grouped by repo. supported indicates whether
-// session detection ran (false -> the active column is shown as unknown).
+// session detection ran (false -> the in-use marker is shown as unknown).
 func (r renderer) render(projects []Project, supported bool) {
 	if len(projects) == 0 {
 		fmt.Fprintln(r.w, "No worktrees found.")
 		return
 	}
+	now := time.Now()
 
-	// Width of the longest shortened path, for branch-column alignment.
-	width := 0
+	// Column widths for alignment: longest path and longest branch/ref.
+	pathW, refW := 0, 0
 	for _, p := range projects {
 		for _, wt := range p.Worktrees {
-			if n := len(r.shorten(wt.Path)); n > width {
-				width = n
+			if n := len(r.shorten(wt.Path)); n > pathW {
+				pathW = n
+			}
+			if n := len(wt.Ref()); n > refW {
+				refW = n
 			}
 		}
 	}
@@ -64,13 +69,18 @@ func (r renderer) render(projects []Project, supported bool) {
 		fmt.Fprintln(r.w, r.paint(colBold, p.Name))
 		for _, wt := range p.Worktrees {
 			marker := " "
-			if wt.Active {
+			if wt.InUse {
 				marker = r.paint(colGreen, "●")
 			} else if !supported {
 				marker = r.paint(colDim, "?")
 			}
 			path := r.shorten(wt.Path)
-			fmt.Fprintf(r.w, "  %s %-*s  %s\n", marker, width, path, r.paint(colDim, wt.Ref()))
+			changed := "—"
+			if wt.HasTime {
+				changed = humanizeSince(wt.Changed, now)
+			}
+			fmt.Fprintf(r.w, "  %s %-*s  %-*s  %s\n",
+				marker, pathW, path, refW, wt.Ref(), r.paint(colDim, changed))
 		}
 	}
 }

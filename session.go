@@ -79,8 +79,8 @@ func isAgentProcess(pid int) bool {
 	}
 }
 
-// markActive flags every worktree that has a live session at or below its path.
-func (s sessionScan) markActive(projects []Project) {
+// markInUse flags every worktree that has a live session at or below its path.
+func (s sessionScan) markInUse(projects []Project) {
 	if !s.supported || len(s.cwds) == 0 {
 		return
 	}
@@ -90,7 +90,7 @@ func (s sessionScan) markActive(projects []Project) {
 			wt := filepath.Clean(wts[wi].Path)
 			for _, c := range s.cwds {
 				if c == wt || strings.HasPrefix(c, wt+string(filepath.Separator)) {
-					wts[wi].Active = true
+					wts[wi].InUse = true
 					break
 				}
 			}

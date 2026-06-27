@@ -17,26 +17,26 @@ Usage:
   [filter] is an optional substring matched against project names.
 
 Flags:
-  -w, --watch            refresh continuously (like top)
+  -w, --watch            live mode: refresh continuously (like top)
   -i, --interval N       refresh interval in seconds with --watch (default 2)
-  --active               show only worktrees with a live session
-  --inactive             show only worktrees without a live session
+  --in-use               show only worktrees with a live session (in use)
+  --open                 show only worktrees without a session (open)
   --root DIR             directory to scan for repos (repeatable; default: $HOME)
   --no-color             disable ANSI color
   -h, --help             show this help
 
-Active-session detection is best-effort and Linux-only (reads /proc). It finds
+In-use detection is best-effort and Linux-only (reads /proc). It finds
 top-level claude sessions; it cannot see in-process subagents.
 `
 
 type options struct {
-	filter     string
-	watch      bool
-	interval   int
-	onlyActive bool
-	onlyIdle   bool
-	roots      []string
-	color      bool
+	filter    string
+	watch     bool
+	interval  int
+	onlyInUse bool
+	onlyOpen  bool
+	roots     []string
+	color     bool
 }
 
 // stringSlice is a repeatable string flag.
@@ -50,27 +50,30 @@ func parseFlags(args []string) (options, error) {
 	fs.Usage = func() { fmt.Fprint(os.Stderr, usage) }
 
 	var (
-		watch      bool
-		interval   int
-		onlyActive bool
-		onlyIdle   bool
-		noColor    bool
-		roots      stringSlice
+		watch     bool
+		interval  int
+		onlyInUse bool
+		onlyOpen  bool
+		noColor   bool
+		roots     stringSlice
 	)
 	fs.BoolVar(&watch, "watch", false, "")
 	fs.BoolVar(&watch, "w", false, "")
+	fs.BoolVar(&watch, "live", false, "") // alias for --watch
 	fs.IntVar(&interval, "interval", 2, "")
 	fs.IntVar(&interval, "i", 2, "")
-	fs.BoolVar(&onlyActive, "active", false, "")
-	fs.BoolVar(&onlyIdle, "inactive", false, "")
+	fs.BoolVar(&onlyInUse, "in-use", false, "")
+	fs.BoolVar(&onlyInUse, "active", false, "") // hidden alias
+	fs.BoolVar(&onlyOpen, "open", false, "")
+	fs.BoolVar(&onlyOpen, "inactive", false, "") // hidden alias
 	fs.BoolVar(&noColor, "no-color", false, "")
 	fs.Var(&roots, "root", "")
 
 	if err := fs.Parse(args); err != nil {
 		return options{}, err
 	}
-	if onlyActive && onlyIdle {
-		return options{}, fmt.Errorf("--active and --inactive are mutually exclusive")
+	if onlyInUse && onlyOpen {
+		return options{}, fmt.Errorf("--in-use and --open are mutually exclusive")
 	}
 	if interval < 1 {
 		interval = 1
@@ -82,13 +85,13 @@ func parseFlags(args []string) (options, error) {
 	}
 
 	return options{
-		filter:     strings.Join(fs.Args(), " "),
-		watch:      watch,
-		interval:   interval,
-		onlyActive: onlyActive,
-		onlyIdle:   onlyIdle,
-		roots:      roots,
-		color:      !noColor && useColor(),
+		filter:    strings.Join(fs.Args(), " "),
+		watch:     watch,
+		interval:  interval,
+		onlyInUse: onlyInUse,
+		onlyOpen:  onlyOpen,
+		roots:     roots,
+		color:     !noColor && useColor(),
 	}, nil
 }
 
@@ -121,7 +124,7 @@ func runOnce(opts options) error {
 	return nil
 }
 
-// collect discovers projects, marks active worktrees, and applies filters.
+// collect discovers projects, marks in-use worktrees, and applies filters.
 // The bool reports whether session detection is supported on this platform.
 func collect(opts options) ([]Project, bool, error) {
 	projects, err := discoverProjects(opts.roots)
@@ -129,11 +132,11 @@ func collect(opts options) ([]Project, bool, error) {
 		return nil, false, err
 	}
 	scan := scanSessions()
-	scan.markActive(projects)
+	scan.markInUse(projects)
 	return filterProjects(projects, opts), scan.supported, nil
 }
 
-// filterProjects applies the name filter and active/inactive mode, dropping
+// filterProjects applies the name filter and in-use/open mode, dropping
 // projects that end up with no matching worktrees.
 func filterProjects(projects []Project, opts options) []Project {
 	var out []Project
@@ -143,10 +146,10 @@ func filterProjects(projects []Project, opts options) []Project {
 		}
 		var wts []Worktree
 		for _, w := range p.Worktrees {
-			if opts.onlyActive && !w.Active {
+			if opts.onlyInUse && !w.InUse {
 				continue
 			}
-			if opts.onlyIdle && w.Active {
+			if opts.onlyOpen && w.InUse {
 				continue
 			}
 			wts = append(wts, w)

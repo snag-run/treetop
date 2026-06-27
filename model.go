@@ -1,12 +1,16 @@
 package main
 
+import "time"
+
 // Worktree is a single git worktree belonging to a Project.
 type Worktree struct {
 	Path     string
 	Branch   string // empty when Detached or Bare
 	Detached bool
 	Bare     bool
-	Active   bool // a live session (e.g. claude) is running here
+	InUse    bool      // a live session (e.g. claude) is running here
+	Changed  time.Time // last git activity (commit/checkout/stage)
+	HasTime  bool      // whether Changed could be determined
 }
 
 // Ref renders the human-readable branch / state of a worktree.
@@ -29,10 +33,10 @@ type Project struct {
 	Worktrees []Worktree
 }
 
-// Active reports whether any worktree in the project has a live session.
-func (p Project) Active() bool {
+// InUse reports whether any worktree in the project has a live session.
+func (p Project) InUse() bool {
 	for _, w := range p.Worktrees {
-		if w.Active {
+		if w.InUse {
 			return true
 		}
 	}
