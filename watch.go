@@ -342,7 +342,7 @@ func headerLines(r renderer, opts options, projects []Project, supported bool) [
 	if supported {
 		inUse = r.paint(colGreen, "● ") + inUse
 	} else {
-		inUse = r.paint(colDim, "? sessions unknown (Linux only)")
+		inUse = r.paint(colDim, "? sessions unknown (Linux/macOS only)")
 	}
 	summary := fmt.Sprintf("%s · %s · %s",
 		plural(nProjects, "project"), plural(nWorktrees, "worktree"), inUse)

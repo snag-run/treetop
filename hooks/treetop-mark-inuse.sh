@@ -29,11 +29,22 @@ extract_cwd() {
 	printf '%s' "$json" | grep -o '"cwd"[[:space:]]*:[[:space:]]*"[^"]*"' | head -n1 | sed 's/.*"cwd"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/'
 }
 
-# claude_pid walks the parent-process chain (Linux /proc) to find the long-lived
-# `claude` session that spawned this hook, so the marker outlives a single
-# subagent but not the session. Empty on non-Linux or if none is found.
+# claude_pid walks the parent-process chain to find the long-lived `claude`
+# session that spawned this hook, so the marker outlives a single subagent but
+# not the session. Uses /proc on Linux and `ps` on macOS/other Unix; empty if no
+# claude ancestor is found. Treetop honours a PID-stamped marker only while that
+# process is alive (see marker.go), so this is what lets the marker survive a
+# subagent that runs longer than the PID-less mtime window.
 claude_pid() {
-	[ -r /proc ] || return 0
+	if [ -r /proc ]; then
+		claude_pid_proc
+	else
+		claude_pid_ps
+	fi
+}
+
+# claude_pid_proc walks the chain via Linux /proc.
+claude_pid_proc() {
 	local pid=$PPID i
 	for i in 1 2 3 4 5 6 7 8; do
 		[ "${pid:-0}" -gt 1 ] 2>/dev/null || return 0
@@ -48,6 +59,36 @@ claude_pid() {
 			return 0
 		fi
 		pid=$(awk '{print $4}' "/proc/$pid/stat" 2>/dev/null) || return 0
+	done
+}
+
+# claude_pid_ps walks the chain via `ps` (macOS and any Unix without /proc),
+# applying the same claude / node-running-claude test as the /proc path. Columns
+# are read one at a time: `ps -o ppid=` right-justifies with leading spaces, so a
+# combined format would be fragile to split. The command line is only consulted
+# to disambiguate a `node` ancestor.
+claude_pid_ps() {
+	command -v ps >/dev/null 2>&1 || return 0
+	local pid=$PPID i
+	for i in 1 2 3 4 5 6 7 8; do
+		[ "${pid:-0}" -gt 1 ] 2>/dev/null || return 0
+		local ppid comm
+		comm=$(ps -o comm= -p "$pid" 2>/dev/null) || return 0
+		[ -n "$comm" ] || return 0
+		case "${comm##*/}" in
+		claude)
+			printf '%s' "$pid"
+			return 0
+			;;
+		node)
+			if ps -o command= -p "$pid" 2>/dev/null | grep -qi claude; then
+				printf '%s' "$pid"
+				return 0
+			fi
+			;;
+		esac
+		ppid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ') || return 0
+		pid=$ppid
 	done
 }
 

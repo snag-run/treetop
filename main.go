@@ -34,9 +34,10 @@ Flags:
   --no-color             disable ANSI color
   -h, --help             show this help
 
-In-use detection combines a best-effort /proc scan (Linux-only: live claude
-sessions, including subagents via open files) with a .treetop-inuse marker file
-that any platform can drop. See the README for the subagent hooks.
+In-use detection combines a best-effort session scan (Linux via /proc, macOS via
+ps+lsof: live claude sessions, including subagents via open files) with a
+.treetop-inuse marker file that any platform can drop. See the README for the
+subagent hooks.
 `
 
 type options struct {
@@ -155,7 +156,7 @@ const inUseDecay = 30 * time.Second
 // collect discovers projects, marks in-use worktrees, and applies filters. The
 // tracker carries in-use decay state across refreshes (in watch mode the caller
 // reuses one tracker; a fresh one makes decay a no-op for snapshots). The bool
-// reports whether /proc session detection is supported on this platform.
+// reports whether live session detection is supported on this platform.
 func collect(opts options, tr *tracker) ([]Project, bool, error) {
 	projects, err := discoverProjects(opts.roots)
 	if err != nil {
