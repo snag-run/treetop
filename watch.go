@@ -319,7 +319,7 @@ func refreshLoop(opts options, queries <-chan string, out chan snapshot, done <-
 		if err != nil {
 			live = nil // invalid regex: don't narrow the collected set
 		}
-		projects, supported, cerr := collect(opts, tr, live)
+		projects, _, supported, cerr := collect(opts, tr, live)
 		s := snapshot{projects: projects, supported: supported, err: cerr}
 		select { // drop a stale pending snapshot, then deliver the fresh one
 		case <-out:
@@ -549,7 +549,7 @@ func runWatchPlain(opts options) {
 	defer ticker.Stop()
 	tr := newTracker(inUseDecay)
 	for {
-		projects, supported, err := collect(opts, tr, nil)
+		projects, _, supported, err := collect(opts, tr, nil)
 		fmt.Fprint(out, clearHome)
 		for _, l := range headerLines(r, opts, projects, supported) {
 			fmt.Fprintln(out, l)

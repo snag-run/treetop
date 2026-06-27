@@ -176,9 +176,15 @@ func main() {
 }
 
 func runOnce(opts options) error {
-	projects, supported, err := collect(opts, newTracker(inUseDecay), nil)
+	projects, badRoots, supported, err := collect(opts, newTracker(inUseDecay), nil)
 	if err != nil {
 		return err
+	}
+	// Warn about unreadable roots here (one-shot) rather than inside discovery:
+	// watch mode calls collect every tick and printing there would corrupt the
+	// live TUI.
+	for _, bad := range badRoots {
+		fmt.Fprintf(os.Stderr, "treetop: warning: cannot read root %s\n", bad)
 	}
 	r := newRenderer(os.Stdout, opts.color, opts.projectsOnly)
 	r.filterDesc = filterDescription(opts)
@@ -224,15 +230,19 @@ const inUseDecay = 30 * time.Second
 // live is an optional extra name filter (the live-mode filter box), AND'd with
 // the CLI patterns. Both are applied during discovery so filtered-out projects
 // are never git-queried or walked — not just hidden after the fact.
-func collect(opts options, tr *tracker, live []*regexp.Regexp) ([]Project, bool, error) {
+//
+// badRoots holds any roots that couldn't be read (as "<root>: <err>" strings);
+// discovery is non-fatal so the other roots are still scanned. Callers on the
+// watch refresh path should ignore it — printing would corrupt the live TUI.
+func collect(opts options, tr *tracker, live []*regexp.Regexp) (projects []Project, badRoots []string, supported bool, err error) {
 	keep := func(name string) bool { return keepName(opts.patterns, live, name) }
-	projects, err := discoverProjects(opts.roots, keep)
+	projects, badRoots, err = discoverProjects(opts.roots, keep)
 	if err != nil {
-		return nil, false, err
+		return nil, badRoots, false, err
 	}
 	scan := scanSessions()
 	scan.markInUse(tr, projects)
-	return filterProjects(projects, opts), scan.supported, nil
+	return filterProjects(projects, opts), badRoots, scan.supported, nil
 }
 
 // compilePatterns compiles each non-empty pattern into a case-insensitive
