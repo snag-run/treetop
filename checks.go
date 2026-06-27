@@ -142,13 +142,27 @@ func checkName(e ghRollupEntry) string {
 // rows a user cares about on top and stays stable across refreshes so the
 // expanded block doesn't reshuffle on every poll. Returns nil for an empty
 // rollup (a PR with no configured checks expands to nothing).
+//
+// Entries are deduplicated by display name, folding to the worst state — the
+// same worst-wins rule the glyph uses, so a check's row and its contribution to
+// the glyph always agree. This matters because GitHub's statusCheckRollup can
+// carry two CheckRuns with the same name (e.g. after a PR is closed and
+// reopened, a stale run lingers beside the fresh one); without folding, the same
+// check would show as two rows.
 func rollupChecks(entries []ghRollupEntry) []Check {
 	if len(entries) == 0 {
 		return nil
 	}
+	byName := make(map[string]int, len(entries)) // name -> index in checks
 	checks := make([]Check, 0, len(entries))
 	for _, e := range entries {
-		checks = append(checks, Check{Name: checkName(e), State: checkStateOf(e)})
+		name, state := checkName(e), checkStateOf(e)
+		if i, ok := byName[name]; ok {
+			checks[i].State = max(checks[i].State, state) // worst wins
+			continue
+		}
+		byName[name] = len(checks)
+		checks = append(checks, Check{Name: name, State: state})
 	}
 	sort.SliceStable(checks, func(i, j int) bool {
 		if checks[i].State != checks[j].State {

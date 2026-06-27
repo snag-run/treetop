@@ -146,6 +146,35 @@ func TestRollupChecks(t *testing.T) {
 	}
 }
 
+// GitHub's statusCheckRollup can return two CheckRuns with the same name — most
+// visibly after a PR is closed and reopened, which leaves a stale run beside the
+// fresh one. rollupChecks must collapse them into a single row, folding to the
+// worst state so the row matches the check's contribution to the glyph.
+func TestRollupChecksDeduplicates(t *testing.T) {
+	entries := []ghRollupEntry{
+		{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "SUCCESS", Name: "changes"},
+		{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "SUCCESS", Name: "changes"},
+		{Typename: "CheckRun", Status: "IN_PROGRESS", Name: "ci"},
+		{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "SUCCESS", Name: "ci"},
+	}
+	got := rollupChecks(entries)
+
+	// "changes" collapses to one success; "ci" folds the pending and success into
+	// one pending row (worst wins), which leads.
+	want := []Check{
+		{Name: "ci", State: StatePending},
+		{Name: "changes", State: StateSuccess},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("rollupChecks returned %d checks, want %d: %+v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("check[%d] = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
+
 func TestShouldPollPR(t *testing.T) {
 	pat := []*regexp.Regexp{regexp.MustCompile("x")}
 	cases := []struct {
