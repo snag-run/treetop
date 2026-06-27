@@ -100,8 +100,9 @@ func runWatch(opts options) {
 	r := newRenderer(out, opts.color, opts.projectsOnly)
 
 	snaps := make(chan snapshot, 1)
+	queries := make(chan string, 1)
 	done := make(chan struct{})
-	go refreshLoop(opts, snaps, done)
+	go refreshLoop(opts, queries, snaps, done)
 	defer close(done)
 
 	cur := snapshot{}
@@ -113,6 +114,19 @@ func runWatch(opts options) {
 	// editing; query persists (and stays applied) after Enter until cleared.
 	filtering := false
 	query := ""
+
+	// pushQuery hands the current filter to the refresh goroutine so it stops
+	// collecting filtered-out projects (drop-stale so a fast typist never blocks).
+	pushQuery := func() {
+		select {
+		case <-queries:
+		default:
+		}
+		select {
+		case queries <- query:
+		default:
+		}
+	}
 
 	// view applies the live filter to the latest snapshot, returning the
 	// header lines, body lines, and whether the current query is a valid regex.
@@ -246,6 +260,7 @@ func runWatch(opts options) {
 			loading = false
 			render()
 		case e := <-events:
+			prevQuery := query
 			if applyEvent(e) {
 				return
 			}
@@ -261,6 +276,9 @@ func runWatch(opts options) {
 					drained = true
 				}
 			}
+			if query != prevQuery {
+				pushQuery() // tell the collector to stop walking filtered-out projects
+			}
 			render()
 		}
 	}
@@ -268,18 +286,28 @@ func runWatch(opts options) {
 
 // refreshLoop collects data on the configured interval and delivers the latest
 // snapshot to the main loop, dropping any stale undelivered snapshot so a slow
-// consumer never makes the producer block. Rendering and live filtering are the
-// main loop's job, so typing into the filter box re-windows instantly.
-func refreshLoop(opts options, out chan snapshot, done <-chan struct{}) {
+// consumer never makes the producer block.
+//
+// The active filter query arrives on queries; refreshLoop applies it during
+// discovery so filtered-out projects are never git-queried or walked, and
+// re-collects immediately when the query changes so broadening the filter
+// repopulates without waiting for the next tick. An invalid (partial) regex is
+// treated as no filter, so data stays available while the user is mid-type.
+func refreshLoop(opts options, queries <-chan string, out chan snapshot, done <-chan struct{}) {
 	ticker := time.NewTicker(time.Duration(opts.interval) * time.Second)
 	defer ticker.Stop()
 
 	// One tracker for the session, so in-use decay carries across refreshes.
 	tr := newTracker(inUseDecay)
+	query := ""
 
 	emit := func() {
-		projects, supported, err := collect(opts, tr)
-		s := snapshot{projects: projects, supported: supported, err: err}
+		live, err := compilePatterns([]string{query})
+		if err != nil {
+			live = nil // invalid regex: don't narrow the collected set
+		}
+		projects, supported, cerr := collect(opts, tr, live)
+		s := snapshot{projects: projects, supported: supported, err: cerr}
 		select { // drop a stale pending snapshot, then deliver the fresh one
 		case <-out:
 		default:
@@ -295,6 +323,11 @@ func refreshLoop(opts options, out chan snapshot, done <-chan struct{}) {
 		select {
 		case <-ticker.C:
 			emit()
+		case q := <-queries:
+			if q != query {
+				query = q
+				emit() // re-collect now so the filtered set updates immediately
+			}
 		case <-done:
 			return
 		}
@@ -481,7 +514,7 @@ func runWatchPlain(opts options) {
 	defer ticker.Stop()
 	tr := newTracker(inUseDecay)
 	for {
-		projects, supported, err := collect(opts, tr)
+		projects, supported, err := collect(opts, tr, nil)
 		fmt.Fprint(out, clearHome)
 		for _, l := range headerLines(r, opts, projects, supported) {
 			fmt.Fprintln(out, l)

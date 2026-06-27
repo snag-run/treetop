@@ -1,6 +1,7 @@
 package main
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -29,6 +30,38 @@ func TestFilterByNameNarrows(t *testing.T) {
 	pats, _ = compilePatterns([]string{"snag|treetop"})
 	if got := filterByName(projects, pats); len(got) != 2 {
 		t.Fatalf("alternation = %v, want 2 projects", names(got))
+	}
+}
+
+func TestKeepNameANDsFilters(t *testing.T) {
+	mustCompile := func(raw ...string) []*regexp.Regexp {
+		p, err := compilePatterns(raw)
+		if err != nil {
+			t.Fatalf("compilePatterns(%v): %v", raw, err)
+		}
+		return p
+	}
+
+	cases := []struct {
+		name      string
+		cli, live []*regexp.Regexp
+		input     string
+		want      bool
+	}{
+		{"no filters keeps all", nil, nil, "snag", true},
+		{"cli only", mustCompile("snag"), nil, "snag", true},
+		{"cli only excludes", mustCompile("snag"), nil, "athanor", false},
+		{"live narrows within cli", mustCompile("snag|athanor"), mustCompile("nag"), "snag", true},
+		{"live excludes a cli match", mustCompile("snag|athanor"), mustCompile("nag"), "athanor", false},
+		{"live only", nil, mustCompile("tree"), "treetop", true},
+		{"live only excludes", nil, mustCompile("tree"), "snag", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := keepName(tc.cli, tc.live, tc.input); got != tc.want {
+				t.Errorf("keepName(%q) = %v, want %v", tc.input, got, tc.want)
+			}
+		})
 	}
 }
 

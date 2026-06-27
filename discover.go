@@ -12,7 +12,12 @@ import (
 // groups them by repository, and returns one Project per repo with all of its
 // worktrees. A bare repo is discovered via any of its linked worktrees, so it
 // need not live under a root itself.
-func discoverProjects(roots []string) ([]Project, error) {
+//
+// keep filters projects by name *before* the expensive per-worktree enrichment
+// (git queries + working-tree walk in listWorktrees), so projects the caller has
+// filtered out cost nothing beyond cheap name discovery. A nil keep enriches
+// every project.
+func discoverProjects(roots []string, keep func(name string) bool) ([]Project, error) {
 	// Map from a repo's common git dir -> a known worktree path we can query.
 	seen := map[string]string{}
 
@@ -41,12 +46,16 @@ func discoverProjects(roots []string) ([]Project, error) {
 
 	var projects []Project
 	for common, anyWorktree := range seen {
+		name := projectName(common)
+		if keep != nil && !keep(name) {
+			continue // filtered out: skip the costly worktree enrichment
+		}
 		wts := listWorktrees(anyWorktree)
 		if len(wts) == 0 {
 			continue
 		}
 		projects = append(projects, Project{
-			Name:      projectName(common),
+			Name:      name,
 			Worktrees: wts,
 		})
 	}
