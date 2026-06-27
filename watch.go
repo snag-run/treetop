@@ -40,9 +40,20 @@ const (
 
 const wheelLines = 3 // lines scrolled per mouse-wheel notch
 
+// frame is a rendered snapshot of the dashboard data: header lines plus the
+// body (one line per worktree/project). It is produced off the input loop.
+type frame struct {
+	header []string
+	body   []string
+}
+
 // runWatch renders a continuously-refreshing, scrollable dashboard until the
 // user quits (q / Ctrl-C). It uses the terminal's alternate screen and raw
 // input so it can scroll and so keystrokes don't echo onto the display.
+//
+// Data collection (git + /proc scan) runs on a background goroutine so a slow
+// scan never blocks scrolling or quitting; the input loop only ever touches the
+// last cached frame, which is cheap to re-window and redraw.
 func runWatch(opts options) {
 	inFd := int(os.Stdin.Fd())
 	oldState, err := term.MakeRaw(inFd)
@@ -63,7 +74,7 @@ func runWatch(opts options) {
 	}
 	defer cleanup()
 
-	events := make(chan event, 16)
+	events := make(chan event, 64)
 	go readInput(events)
 
 	// SIGTERM still arrives in raw mode (Ctrl-C does not — it's read as a byte).
@@ -72,55 +83,45 @@ func runWatch(opts options) {
 	go func() { <-sig; events <- evQuit }()
 
 	r := newRenderer(out, opts.color, opts.projectsOnly)
-	ticker := time.NewTicker(time.Duration(opts.interval) * time.Second)
-	defer ticker.Stop()
 
+	frames := make(chan frame, 1)
+	done := make(chan struct{})
+	go refreshLoop(opts, r, frames, done)
+	defer close(done)
+
+	cur := frame{body: []string{r.paint(colDim, "  loading…")}}
 	offset := 0
 	var viewport, maxOffset int
 
-	draw := func() {
-		projects, supported, derr := collect(opts)
-		_, rows, err := term.GetSize(int(os.Stdout.Fd()))
-		if err != nil || rows <= 0 {
+	render := func() {
+		_, rows, gerr := term.GetSize(int(os.Stdout.Fd()))
+		if gerr != nil || rows <= 0 {
 			rows = 24
 		}
-
-		header := headerLines(r, opts, projects, supported)
-		viewport = rows - len(header) - 1 // reserve one row for the footer
+		viewport = rows - len(cur.header) - 1 // reserve one row for the footer
 		if viewport < 1 {
 			viewport = 1
 		}
-
-		var body []string
-		if derr != nil {
-			body = []string{"  error: " + derr.Error()}
-		} else {
-			body = r.bodyLines(projects, supported)
-		}
-
-		maxOffset = len(body) - viewport
-		if maxOffset < 0 {
-			maxOffset = 0
-		}
+		maxOffset = max(0, len(cur.body)-viewport)
 		offset = clamp(offset, 0, maxOffset)
-		end := min(offset+viewport, len(body))
+		end := min(offset+viewport, len(cur.body))
 
 		fmt.Fprint(out, clearHome)
-		for _, l := range header {
+		for _, l := range cur.header {
 			fmt.Fprintf(out, "%s\r\n", l)
 		}
-		for _, l := range body[offset:end] {
+		for _, l := range cur.body[offset:end] {
 			fmt.Fprintf(out, "%s\r\n", l)
 		}
-		fmt.Fprint(out, scrollFooter(r, offset, len(body), viewport))
+		fmt.Fprint(out, scrollFooter(r, offset, len(cur.body), viewport))
 		out.Flush()
 	}
 
-	draw()
+	render()
 	for {
 		select {
-		case <-ticker.C:
-			draw()
+		case cur = <-frames:
+			render()
 		case e := <-events:
 			switch e {
 			case evQuit:
@@ -142,7 +143,43 @@ func runWatch(opts options) {
 			case evBottom:
 				offset = maxOffset
 			}
-			draw()
+			render()
+		}
+	}
+}
+
+// refreshLoop collects data on the configured interval and delivers the latest
+// frame to the main loop, dropping any stale undelivered frame so a slow
+// consumer never makes the producer block.
+func refreshLoop(opts options, r renderer, out chan frame, done <-chan struct{}) {
+	ticker := time.NewTicker(time.Duration(opts.interval) * time.Second)
+	defer ticker.Stop()
+
+	emit := func() {
+		projects, supported, err := collect(opts)
+		f := frame{header: headerLines(r, opts, projects, supported)}
+		if err != nil {
+			f.body = []string{"  error: " + err.Error()}
+		} else {
+			f.body = r.bodyLines(projects, supported)
+		}
+		select { // drop a stale pending frame, then deliver the fresh one
+		case <-out:
+		default:
+		}
+		select {
+		case out <- f:
+		case <-done:
+		}
+	}
+
+	emit()
+	for {
+		select {
+		case <-ticker.C:
+			emit()
+		case <-done:
+			return
 		}
 	}
 }
