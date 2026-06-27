@@ -165,6 +165,10 @@ Known limits:
   file works; a blank/`?` then means *unknown*, not *definitely open*.)
 - A session whose working directory has drifted out of every worktree, and which
   holds no files open under one, won't be counted by the scan alone.
+- Watch mode (`-w`) uses the terminal's alternate screen and restores it on a
+  normal quit and on catchable signals (SIGINT/SIGTERM/SIGHUP/SIGQUIT). A
+  `kill -9` or hard crash is untrappable, so it can leave your terminal on the
+  alternate screen — run `reset` (or `tput rmcup`) to recover.
 
 ### Marking agent (subagent) worktrees in use
 
