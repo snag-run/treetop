@@ -1,0 +1,62 @@
+name: release-please
+
+# Maintains the release PR (version bump + CHANGELOG from Conventional Commits)
+# and, when that PR merges, cuts the v* tag + GitHub Release. The build job then
+# compiles cross-platform binaries and attaches them to the release.
+#
+# Uses the built-in GITHUB_TOKEN (no PAT). The build runs in the same workflow
+# run as the release, so it does not depend on the tag triggering a new run.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: release-please-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  build:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+      - name: Build cross-platform binaries
+        run: |
+          set -euo pipefail
+          tag="${{ needs.release-please.outputs.tag_name }}"
+          version="${tag#v}"
+          mkdir -p dist
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+            os="${target%/*}"; arch="${target#*/}"
+            ext=""; [ "$os" = windows ] && ext=".exe"
+            out="treetop_${version}_${os}_${arch}${ext}"
+            echo "building $out"
+            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" \
+              go build -trimpath -ldflags "-s -w" -o "dist/${out}" .
+          done
+          ( cd dist && sha256sum * > SHA256SUMS )
+      - name: Attach binaries to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ needs.release-please.outputs.tag_name }}" dist/* --clobber
