@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.0](https://github.com/snag-run/treetop/compare/v0.2.0...v0.3.0) (2026-06-27)
+
+
+### Features
+
+* clickable OSC 8 links for PR numbers and check runs ([#72](https://github.com/snag-run/treetop/issues/72)) ([d93dd90](https://github.com/snag-run/treetop/commit/d93dd904d06dc431e0a0e5e10ec1d3158e96ac04))
+* credit snag.run in README and watch-mode title ([#74](https://github.com/snag-run/treetop/issues/74)) ([ad5b86c](https://github.com/snag-run/treetop/commit/ad5b86c2cfbd251a031ca4c76b5daf03e57bedb5))
+* PR number in its own column, colored by review state ([#68](https://github.com/snag-run/treetop/issues/68)) ([2fe7ef8](https://github.com/snag-run/treetop/commit/2fe7ef82858d65f34243706d13b5194b28f154f5))
+
+
+### Bug Fixes
+
+* dedup --checks rows so a closed/reopened PR doesn't double them ([#64](https://github.com/snag-run/treetop/issues/64)) ([f8b480f](https://github.com/snag-run/treetop/commit/f8b480f055da097373d5455bc17ee04ade6270ce)), closes [#63](https://github.com/snag-run/treetop/issues/63)
+
 ## [0.2.0](https://github.com/snag-run/treetop/compare/v0.1.1...v0.2.0) (2026-06-27)
 
 
