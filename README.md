@@ -156,7 +156,7 @@ When `gh` is missing or unauthenticated, the column is blank (never an error) an
 the header says why — e.g. `PR checks: gh not authenticated — run gh auth login`.
 A repo with no GitHub remote stays quietly blank. In `--projects` view the glyph
 is the worst status across the project's worktrees. The open PR's number is shown
-as `#123` after the branch, coloured by its review state.
+in its own column after the branch as `#123`, coloured by its review state.
 
 | Glyph | Meaning |
 |-------|---------|
