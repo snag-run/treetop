@@ -117,31 +117,51 @@ func runWatch(opts options) {
 		out.Flush()
 	}
 
+	// applyEvent updates scroll state; it returns true when the user quit.
+	applyEvent := func(e event) bool {
+		switch e {
+		case evQuit:
+			return true
+		case evUp:
+			offset--
+		case evDown:
+			offset++
+		case evWheelUp:
+			offset -= wheelLines
+		case evWheelDown:
+			offset += wheelLines
+		case evPageUp:
+			offset -= viewport
+		case evPageDown:
+			offset += viewport
+		case evTop:
+			offset = 0
+		case evBottom:
+			offset = maxOffset
+		}
+		return false
+	}
+
 	render()
 	for {
 		select {
 		case cur = <-frames:
 			render()
 		case e := <-events:
-			switch e {
-			case evQuit:
+			if applyEvent(e) {
 				return
-			case evUp:
-				offset--
-			case evDown:
-				offset++
-			case evWheelUp:
-				offset -= wheelLines
-			case evWheelDown:
-				offset += wheelLines
-			case evPageUp:
-				offset -= viewport
-			case evPageDown:
-				offset += viewport
-			case evTop:
-				offset = 0
-			case evBottom:
-				offset = maxOffset
+			}
+			// Drain any queued events (e.g. a mouse-wheel burst) before
+			// redrawing, so quit can't sit behind them and we render once.
+			for drained := false; !drained; {
+				select {
+				case e := <-events:
+					if applyEvent(e) {
+						return
+					}
+				default:
+					drained = true
+				}
 			}
 			render()
 		}
