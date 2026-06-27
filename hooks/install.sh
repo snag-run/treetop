@@ -12,8 +12,14 @@
 # worktree across all your projects tracked; pick --repo to scope it to (and
 # commit it with) a single repository.
 #
+# A --global install can also add ".treetop-inuse" to your global git excludes
+# (core.excludesfile) so the marker file isn't reported as untracked in every
+# repo. Because that edits your global git config, it now asks first: it prompts
+# when run interactively and is skipped otherwise. Pass --git-excludes to opt in
+# without a prompt (e.g. in scripts/CI) or --no-git-excludes to skip it.
+#
 # Usage:
-#   hooks/install.sh [--global | --repo [DIR]] [--uninstall]
+#   hooks/install.sh [--global | --repo [DIR]] [--git-excludes | --no-git-excludes] [--uninstall]
 #
 # Requires: jq (to merge into settings.json without clobbering existing keys).
 set -euo pipefail
@@ -22,6 +28,7 @@ SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCOPE="global"
 SCOPE_DIR=""
 UNINSTALL=0
+EXCLUDES_CHOICE="" # "", "yes", or "no" — set by --git-excludes/--no-git-excludes
 
 while [ $# -gt 0 ]; do
 	case "$1" in
@@ -30,6 +37,8 @@ while [ $# -gt 0 ]; do
 		SCOPE="repo"
 		case "${2:-}" in -* | "") : ;; *) SCOPE_DIR="$2"; shift ;; esac
 		;;
+	--git-excludes) EXCLUDES_CHOICE="yes" ;;
+	--no-git-excludes) EXCLUDES_CHOICE="no" ;;
 	--uninstall) UNINSTALL=1 ;;
 	-h | --help)
 		# Print the header comment block (skip the shebang, stop at the first
@@ -115,18 +124,50 @@ merge_settings "$STRIP"'
   | .hooks.SubagentStop  += [{matcher: "*", hooks: [{type: "command", command: $unmark}]}]
 '
 
+# want_global_excludes decides whether to add .treetop-inuse to the user's
+# global git excludes. This edits global git config, so never do it silently:
+# an explicit flag wins; otherwise prompt when interactive and default to "no"
+# (so a piped/CI `install.sh` never modifies global config without consent).
+want_global_excludes() {
+	case "$EXCLUDES_CHOICE" in
+	yes) return 0 ;;
+	no) return 1 ;;
+	esac
+	if [ -t 0 ]; then
+		printf 'treetop: add ".treetop-inuse" to your global git excludes so the marker is ignored in every repo? [y/N] ' >&2
+		local reply=""
+		read -r reply || reply=""
+		case "$reply" in [Yy]*) return 0 ;; *) return 1 ;; esac
+	fi
+	return 1
+}
+
 # Keep the marker from showing up as an untracked file in every repo it lands
-# in, by adding it to the user's global git excludes (global install only).
+# in, by adding it to the user's global git excludes (global install only, and
+# only with the user's consent — see want_global_excludes).
 if [ "$SCOPE" = "global" ]; then
-	excludes="$(git config --global --get core.excludesfile 2>/dev/null || true)"
-	excludes="${excludes:-$HOME/.config/git/ignore}"
-	# Expand a leading ~ that git stores literally.
-	case "$excludes" in "~/"*) excludes="$HOME/${excludes#\~/}" ;; esac
-	mkdir -p "$(dirname "$excludes")"
-	git config --global core.excludesfile "$excludes"
-	if ! { [ -f "$excludes" ] && grep -qxF '.treetop-inuse' "$excludes"; }; then
-		printf '%s\n' '.treetop-inuse' >>"$excludes"
-		echo "added .treetop-inuse to global gitignore ($excludes)"
+	if want_global_excludes; then
+		excludes="$(git config --global --get core.excludesfile 2>/dev/null || true)"
+		excludes="${excludes:-$HOME/.config/git/ignore}"
+		# Expand a leading ~ that git stores literally.
+		case "$excludes" in "~/"*) excludes="$HOME/${excludes#\~/}" ;; esac
+		mkdir -p "$(dirname "$excludes")"
+		git config --global core.excludesfile "$excludes"
+		if ! { [ -f "$excludes" ] && grep -qxF '.treetop-inuse' "$excludes"; }; then
+			# Start on a fresh line if the file is non-empty and lacks a trailing
+			# newline, so .treetop-inuse doesn't glue onto the previous entry.
+			# (Command substitution strips trailing newlines, so a final newline
+			# makes $(tail -c1) empty.)
+			if [ -s "$excludes" ] && [ -n "$(tail -c1 "$excludes")" ]; then
+				printf '\n' >>"$excludes"
+			fi
+			printf '%s\n' '.treetop-inuse' >>"$excludes"
+			echo "added .treetop-inuse to global gitignore ($excludes)"
+		fi
+	else
+		echo "skipped global gitignore change (no consent); .treetop-inuse may show as untracked."
+		echo "  to enable later, rerun with --git-excludes, or add '.treetop-inuse' to your"
+		echo "  global git excludes (core.excludesfile, default ~/.config/git/ignore)."
 	fi
 fi
 
