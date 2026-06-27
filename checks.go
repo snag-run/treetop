@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os/exec"
 	"regexp"
+	"sort"
 	"sync"
 	"time"
 )
@@ -52,13 +53,26 @@ const prCacheStale = 10 * prCacheTTL
 
 // ghRollupEntry is one entry of a PR's statusCheckRollup. GitHub mixes two entry
 // shapes with different field names; both are normalised by checkStateOf:
-//   - CheckRun (GitHub Actions): __typename "CheckRun", status + conclusion
-//   - StatusContext (external CI): __typename "StatusContext", state
+//   - CheckRun (GitHub Actions): __typename "CheckRun", status + conclusion,
+//     named by name (the job) under workflowName (the workflow, e.g. "ci")
+//   - StatusContext (external CI): __typename "StatusContext", state, named by
+//     context
 type ghRollupEntry struct {
-	Typename   string `json:"__typename"`
-	Status     string `json:"status"`     // CheckRun: QUEUED/IN_PROGRESS/COMPLETED
-	Conclusion string `json:"conclusion"` // CheckRun: SUCCESS/FAILURE/... (empty until COMPLETED)
-	State      string `json:"state"`      // StatusContext: SUCCESS/PENDING/FAILURE/ERROR/EXPECTED
+	Typename     string `json:"__typename"`
+	Status       string `json:"status"`       // CheckRun: QUEUED/IN_PROGRESS/COMPLETED
+	Conclusion   string `json:"conclusion"`   // CheckRun: SUCCESS/FAILURE/... (empty until COMPLETED)
+	State        string `json:"state"`        // StatusContext: SUCCESS/PENDING/FAILURE/ERROR/EXPECTED
+	Name         string `json:"name"`         // CheckRun: the job/check name
+	WorkflowName string `json:"workflowName"` // CheckRun: the workflow name
+	Context      string `json:"context"`      // StatusContext: the check name
+}
+
+// Check is a single CI check (one statusCheckRollup entry), retained for the
+// per-check rows the --checks view expands beneath a worktree. The rollup glyph
+// folds these into one worst-wins state; this keeps the individual name + state.
+type Check struct {
+	Name  string
+	State CheckState
 }
 
 // ghPR is one open pull request as returned by `gh pr list --json`.
@@ -106,13 +120,60 @@ func rollupCheckState(entries []ghRollupEntry) CheckState {
 	return worst
 }
 
+// checkName picks the most useful display name for a rollup entry, which varies
+// by entry shape: a CheckRun carries a job name (under a workflow name), a
+// StatusContext carries a context. Falls back across the fields, then to a
+// generic label, so a per-check row always has something to show.
+func checkName(e ghRollupEntry) string {
+	switch {
+	case e.Name != "":
+		return e.Name
+	case e.Context != "":
+		return e.Context
+	case e.WorkflowName != "":
+		return e.WorkflowName
+	default:
+		return "check"
+	}
+}
+
+// rollupChecks expands a PR's rollup entries into per-check rows for the --checks
+// view, sorted worst-first (failures lead) then by name. The ordering puts the
+// rows a user cares about on top and stays stable across refreshes so the
+// expanded block doesn't reshuffle on every poll. Returns nil for an empty
+// rollup (a PR with no configured checks expands to nothing).
+func rollupChecks(entries []ghRollupEntry) []Check {
+	if len(entries) == 0 {
+		return nil
+	}
+	checks := make([]Check, 0, len(entries))
+	for _, e := range entries {
+		checks = append(checks, Check{Name: checkName(e), State: checkStateOf(e)})
+	}
+	sort.SliceStable(checks, func(i, j int) bool {
+		if checks[i].State != checks[j].State {
+			return checks[i].State > checks[j].State // worst first
+		}
+		return checks[i].Name < checks[j].Name
+	})
+	return checks
+}
+
+// prStatus is a branch's PR check status: the rolled-up state behind the glyph
+// plus the individual checks behind the --checks rows. Both are derived from one
+// rollup, so they stay consistent and the per-check detail costs no extra gh call.
+type prStatus struct {
+	State  CheckState
+	Checks []Check
+}
+
 // ghFetchPRChecks runs `gh pr list` in dir and returns a map from each open PR's
 // head branch to its rolled-up CheckState. ok is false (with the map nil) when
 // gh is missing, unauthenticated, the directory has no GitHub remote, or the call
 // times out: PR status is best-effort enrichment and must never break a refresh.
 // A successful call with no open PRs returns an empty map with ok true, so the
 // cache can remember "this repo has none" rather than retrying every tick.
-func ghFetchPRChecks(dir string) (map[string]CheckState, bool) {
+func ghFetchPRChecks(dir string) (map[string]prStatus, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), prFetchTimeout)
 	defer cancel()
 
@@ -133,7 +194,7 @@ func ghFetchPRChecks(dir string) (map[string]CheckState, bool) {
 	if err := json.Unmarshal(out, &prs); err != nil {
 		return nil, false
 	}
-	checks := make(map[string]CheckState, len(prs))
+	checks := make(map[string]prStatus, len(prs))
 	for _, pr := range prs {
 		if pr.HeadRefName == "" {
 			continue
@@ -145,14 +206,17 @@ func ghFetchPRChecks(dir string) (map[string]CheckState, bool) {
 		if pr.IsCrossRepository {
 			continue
 		}
-		checks[pr.HeadRefName] = rollupCheckState(pr.Rollup)
+		checks[pr.HeadRefName] = prStatus{
+			State:  rollupCheckState(pr.Rollup),
+			Checks: rollupChecks(pr.Rollup),
+		}
 	}
 	return checks, true
 }
 
 type prCacheEntry struct {
 	at     time.Time
-	checks map[string]CheckState
+	checks map[string]prStatus
 }
 
 var (
@@ -164,7 +228,7 @@ var (
 // prCacheTTL cache so gh is hit at most once per TTL per repo regardless of how
 // often the dashboard refreshes. On a fetch failure it falls back to the last
 // cached value (stale is better than blank), or nil if there is none.
-func fetchPRChecks(dir string) map[string]CheckState {
+func fetchPRChecks(dir string) map[string]prStatus {
 	now := time.Now()
 
 	prCacheMu.Lock()
@@ -223,7 +287,8 @@ func enrichPRChecks(projects []Project) (polled int) {
 			checks := fetchPRChecks(p.Worktrees[0].Path)
 			for j := range p.Worktrees {
 				if s, ok := checks[p.Worktrees[j].Branch]; ok {
-					p.Worktrees[j].Check = s
+					p.Worktrees[j].Check = s.State
+					p.Worktrees[j].Checks = s.Checks
 					p.Worktrees[j].HasPR = true
 				}
 			}

@@ -49,6 +49,8 @@ Flags:
   -p, --projects         collapse to one line per project (no worktrees)
   --pr                   show a PR check-status glyph per worktree (needs gh;
                          only polls when the list is filtered, max 5 projects)
+  --checks               expand --pr into one row per CI check under each
+                         worktree (implies --pr; full view only)
   --in-use               show only worktrees with a live session (in use)
   --open                 show only worktrees without a session (open)
   --root DIR             directory to scan for repos (repeatable; default: $HOME)
@@ -71,6 +73,7 @@ type options struct {
 	onlyOpen     bool
 	projectsOnly bool
 	pr           bool
+	checks       bool
 	roots        []string
 	depth        int
 	color        bool
@@ -100,6 +103,7 @@ func parseFlags(args []string) (options, error) {
 		onlyOpen     bool
 		projectsOnly bool
 		pr           bool
+		checks       bool
 		noColor      bool
 		showVersion  bool
 		roots        stringSlice
@@ -117,6 +121,7 @@ func parseFlags(args []string) (options, error) {
 	fs.BoolVar(&projectsOnly, "projects", false, "")
 	fs.BoolVar(&projectsOnly, "p", false, "")
 	fs.BoolVar(&pr, "pr", false, "")
+	fs.BoolVar(&checks, "checks", false, "")
 	fs.BoolVar(&noColor, "no-color", false, "")
 	fs.BoolVar(&showVersion, "version", false, "")
 	fs.BoolVar(&showVersion, "V", false, "")
@@ -131,6 +136,11 @@ func parseFlags(args []string) (options, error) {
 	}
 	if onlyInUse && onlyOpen {
 		return options{}, fmt.Errorf("--in-use and --open are mutually exclusive")
+	}
+	// --checks expands the PR column into per-check rows, so it implies --pr: the
+	// same polling/gating, plus the rollup glyph each row hangs beneath.
+	if checks {
+		pr = true
 	}
 	if interval < 1 {
 		interval = 1
@@ -168,6 +178,7 @@ func parseFlags(args []string) (options, error) {
 		onlyOpen:     onlyOpen,
 		projectsOnly: projectsOnly,
 		pr:           pr,
+		checks:       checks,
 		roots:        roots,
 		depth:        depth,
 		color:        !noColor && useColor(),
@@ -211,6 +222,7 @@ func runOnce(opts options) error {
 		fmt.Fprintf(os.Stderr, "treetop: warning: cannot read root %s\n", bad)
 	}
 	r := newRenderer(os.Stdout, opts.color, opts.projectsOnly, opts.pr)
+	r.checks = opts.checks
 	r.filterDesc = filterDescription(opts)
 	r.render(projects, supported)
 	if note := unsupportedSessionNote(supported); note != "" {

@@ -112,6 +112,56 @@ func TestRenderPRGlyphColumn(t *testing.T) {
 	}
 }
 
+// TestRenderCheckRows asserts that --checks expands one coloured row per CI check
+// beneath a worktree, that the rows are off without the flag, and that a worktree
+// with no PR contributes no rows.
+func TestRenderCheckRows(t *testing.T) {
+	now := time.Now()
+	withPR := Worktree{
+		Path: "/wt", Branch: "feat", HasPR: true, Check: StateFailure,
+		Checks: []Check{
+			{Name: "lint", State: StateFailure},
+			{Name: "build", State: StateSuccess},
+		},
+		Changed: now, HasTime: true, Edited: now, HasEdit: true,
+	}
+	noPR := Worktree{
+		Path: "/clean", Branch: "main",
+		Changed: now, HasTime: true, Edited: now, HasEdit: true,
+	}
+	projects := []Project{{Name: "snag", Worktrees: []Worktree{withPR, noPR}}}
+
+	// Flag off: the rollup glyph may show, but no per-check names appear.
+	var off strings.Builder
+	r := newRenderer(&off, false, false, true)
+	r.render(projects, true)
+	for _, name := range []string{"lint", "build"} {
+		if strings.Contains(off.String(), name) {
+			t.Errorf("without --checks, check name %q should not render:\n%s", name, off.String())
+		}
+	}
+
+	// Flag on (with colour): each check renders as a coloured glyph + its name.
+	var on strings.Builder
+	r = newRenderer(&on, true, false, true)
+	r.checks = true
+	r.render(projects, true)
+	out := on.String()
+	for _, want := range []struct{ color, glyph, name string }{
+		{colRed, "✗", "lint"},
+		{colGreen, "✓", "build"},
+	} {
+		if !strings.Contains(out, want.color+want.glyph+colReset+" "+want.name) {
+			t.Errorf("expected check row %q %q:\n%s", want.glyph, want.name, out)
+		}
+	}
+
+	// Failures sort ahead of successes: lint's row precedes build's.
+	if strings.Index(out, "lint") > strings.Index(out, "build") {
+		t.Errorf("failing check should render before passing one:\n%s", out)
+	}
+}
+
 // TestRenderBlankLineBetweenProjects asserts adjacent project groups are
 // separated by a blank line, but the first project gets no leading blank.
 func TestRenderBlankLineBetweenProjects(t *testing.T) {

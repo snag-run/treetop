@@ -114,6 +114,7 @@ func runWatch(opts options) {
 	go func() { <-sig; events <- event{kind: evQuit} }()
 
 	r := newRenderer(out, opts.color, opts.projectsOnly, opts.pr)
+	r.checks = opts.checks
 
 	snaps := make(chan snapshot, 1)
 	queries := make(chan string, 1)
@@ -572,6 +573,7 @@ func watchFooter(r renderer, s footerState) string {
 func runWatchPlain(opts options) {
 	out := bufio.NewWriter(os.Stdout)
 	r := newRenderer(out, opts.color, opts.projectsOnly, opts.pr)
+	r.checks = opts.checks
 	ticker := time.NewTicker(time.Duration(opts.interval) * time.Second)
 	defer ticker.Stop()
 	tr := newTracker(inUseDecay)

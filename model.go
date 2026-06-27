@@ -15,6 +15,7 @@ type Worktree struct {
 	HasEdit  bool       // whether Edited could be determined
 	HasPR    bool       // an open PR was found for this branch (only set with --pr)
 	Check    CheckState // rolled-up CI status of that PR; meaningful only when HasPR
+	Checks   []Check    // per-check breakdown behind Check, for the --checks rows; nil otherwise
 }
 
 // Ref renders the human-readable branch / state of a worktree.

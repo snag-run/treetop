@@ -94,6 +94,58 @@ func TestRollupCheckState(t *testing.T) {
 	}
 }
 
+func TestCheckName(t *testing.T) {
+	cases := []struct {
+		name string
+		e    ghRollupEntry
+		want string
+	}{
+		{"checkrun job name", ghRollupEntry{Typename: "CheckRun", Name: "build (ubuntu)", WorkflowName: "ci"}, "build (ubuntu)"},
+		{"status context", ghRollupEntry{Typename: "StatusContext", Context: "ci/circleci"}, "ci/circleci"},
+		{"falls back to workflow", ghRollupEntry{Typename: "CheckRun", WorkflowName: "ci"}, "ci"},
+		{"generic fallback", ghRollupEntry{Typename: "CheckRun"}, "check"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := checkName(c.e); got != c.want {
+				t.Errorf("checkName(%+v) = %q, want %q", c.e, got, c.want)
+			}
+		})
+	}
+}
+
+func TestRollupChecks(t *testing.T) {
+	entries := []ghRollupEntry{
+		{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "SUCCESS", Name: "build"},
+		{Typename: "StatusContext", State: "FAILURE", Context: "lint"},
+		{Typename: "CheckRun", Status: "IN_PROGRESS", Name: "test"},
+		{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "SUCCESS", Name: "audit"},
+	}
+	got := rollupChecks(entries)
+
+	// Worst-first, then alphabetical: the failure leads, the pending follows, then
+	// the two successes in name order.
+	want := []Check{
+		{Name: "lint", State: StateFailure},
+		{Name: "test", State: StatePending},
+		{Name: "audit", State: StateSuccess},
+		{Name: "build", State: StateSuccess},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("rollupChecks returned %d checks, want %d: %+v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("check[%d] = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+
+	// An empty rollup expands to nothing (a PR with no configured checks).
+	if got := rollupChecks(nil); got != nil {
+		t.Errorf("empty rollup should expand to nil, got %+v", got)
+	}
+}
+
 func TestShouldPollPR(t *testing.T) {
 	pat := []*regexp.Regexp{regexp.MustCompile("x")}
 	cases := []struct {
