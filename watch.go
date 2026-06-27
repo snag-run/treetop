@@ -51,6 +51,11 @@ type event struct {
 	ch   rune
 }
 
+// watchSignals are the trappable termination signals that runWatch turns into a
+// graceful quit so the terminal (alternate screen, cursor, raw mode) is
+// restored on the way out. SIGKILL is deliberately absent — it can't be caught.
+var watchSignals = []os.Signal{syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT}
+
 const wheelLines = 3 // lines scrolled per mouse-wheel notch
 
 // escSeqTimeout is how long to wait for the rest of a possibly-fragmented escape
@@ -96,9 +101,15 @@ func runWatch(opts options) {
 	events := make(chan event, 64)
 	go readInput(events)
 
-	// SIGTERM still arrives in raw mode (Ctrl-C does not — it's read as a byte).
+	// Catch the signals that would otherwise terminate the process with the
+	// alternate screen still active, and turn them into a graceful quit so the
+	// deferred cleanup restores the terminal. SIGINT via Ctrl-C doesn't arrive
+	// here (raw mode reads it as a byte), but `kill -INT` does; SIGHUP fires when
+	// the terminal window closes or a multiplexer detaches; SIGQUIT is Ctrl-\.
+	// SIGKILL is untrappable, so a `kill -9` or hard crash can still leave the
+	// alt screen up — run `reset` (or `tput rmcup`) to recover.
 	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(sig, watchSignals...)
 	go func() { <-sig; events <- event{kind: evQuit} }()
 
 	r := newRenderer(out, opts.color, opts.projectsOnly)
