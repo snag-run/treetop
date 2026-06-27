@@ -66,13 +66,36 @@ func newestEdit(worktreePath string) (time.Time, bool) {
 	return mtime, hasTime
 }
 
+// Defense-in-depth bounds for walkNewest. A pathologically large or deep
+// worktree must not stall the dashboard refresh, so the walk gives up after
+// walkBudget of wall-clock time or walkMaxEntries entries visited (whichever
+// comes first) and returns the newest mtime found so far. The "edited" column
+// is approximate by design, so a partial result is acceptable.
+const (
+	walkBudget     = 2 * time.Second
+	walkMaxEntries = 200_000
+	// walkDeadlineCheckEvery throttles time.Now() calls: checking the clock on
+	// every entry is a measurable cost on large trees, so check every N entries.
+	walkDeadlineCheckEvery = 1024
+)
+
 // walkNewest walks the worktree, pruning .git and git-ignored directories, and
-// returns the newest file mtime found.
+// returns the newest file mtime found. The walk is bounded by walkBudget and
+// walkMaxEntries; see walkNewestBounded.
 func walkNewest(worktreePath string) (time.Time, bool) {
+	return walkNewestBounded(worktreePath, time.Now().Add(walkBudget), walkMaxEntries)
+}
+
+// walkNewestBounded is the core of walkNewest, with the wall-clock deadline and
+// the max-entries cap injected so tests can exercise tiny budgets. On hitting a
+// bound it stops via filepath.SkipAll and returns the newest mtime found so far
+// (a partial-but-valid result).
+func walkNewestBounded(worktreePath string, deadline time.Time, maxEntries int) (time.Time, bool) {
 	ignored := ignoredDirs(worktreePath)
 
 	var latest time.Time
 	found := false
+	entries := 0
 	filepath.WalkDir(worktreePath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil // unreadable entry: skip it, keep walking
@@ -90,6 +113,18 @@ func walkNewest(worktreePath string) (time.Time, bool) {
 			if mt := fi.ModTime(); mt.After(latest) {
 				latest, found = mt, true
 			}
+		}
+		// Bound the walk after recording this file's mtime, so the entry that
+		// trips the bound still contributes: a partial newest-mtime is fine, but
+		// the walk must return regardless of worktree size or depth.
+		entries++
+		if maxEntries > 0 && entries >= maxEntries {
+			return filepath.SkipAll
+		}
+		// time.Now() per entry is a measurable cost on large trees, so only
+		// check the deadline every walkDeadlineCheckEvery files.
+		if entries%walkDeadlineCheckEvery == 0 && time.Now().After(deadline) {
+			return filepath.SkipAll
 		}
 		return nil
 	})

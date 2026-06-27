@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -45,5 +46,29 @@ func TestWalkNewestEmpty(t *testing.T) {
 	touch(t, filepath.Join(dir, ".git", "HEAD"), time.Now())
 	if _, ok := walkNewest(dir); ok {
 		t.Error("a worktree with only .git contents should report no edit time")
+	}
+}
+
+// A walk that exceeds its budget must stop early and return a partial-but-valid
+// result (found==true) rather than running to completion.
+func TestWalkNewestBoundedExceedsBudget(t *testing.T) {
+	dir := t.TempDir()
+	base := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	for i := 0; i < 50; i++ {
+		touch(t, filepath.Join(dir, "f"+strconv.Itoa(i)+".txt"), base)
+	}
+
+	// An already-expired deadline forces the bound to trip on the first entry.
+	got, ok := walkNewestBounded(dir, time.Now().Add(-time.Hour), walkMaxEntries)
+	if !ok {
+		t.Fatal("expected a partial-but-valid result (found==true) after hitting the budget")
+	}
+	if !got.Equal(base) {
+		t.Errorf("walkNewestBounded = %v, want %v", got, base)
+	}
+
+	// A tight max-entries cap is the other bound; it must also return found==true.
+	if _, ok := walkNewestBounded(dir, time.Now().Add(time.Hour), 1); !ok {
+		t.Error("expected found==true after hitting the max-entries cap")
 	}
 }
