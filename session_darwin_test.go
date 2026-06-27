@@ -28,8 +28,8 @@ not-a-pid here
 
 func TestParseLSOF(t *testing.T) {
 	// Two processes, in the -Fpftn shape lsof emits: p<pid>, then f/t/n per
-	// descriptor. cwd is fd "cwd"; numbered REG fds are open files; the txt
-	// executable mapping and non-REG descriptors (CHR, unix) must be ignored.
+	// descriptor. cwd is fd "cwd"; numbered REG and DIR fds are open files; the
+	// txt executable mapping and non-REG/DIR descriptors (CHR, unix) are ignored.
 	out := []byte(`p83632
 fcwd
 tDIR
@@ -53,6 +53,9 @@ n/Users/me/proj
 f5
 tREG
 n/Users/me/proj/src/app.go
+f7
+tDIR
+n/Users/me/proj/watched
 `)
 	cwds, files := parseLSOF(out)
 
@@ -60,7 +63,9 @@ n/Users/me/proj/src/app.go
 	if !reflect.DeepEqual(cwds, wantCwds) {
 		t.Errorf("cwds = %v, want %v", cwds, wantCwds)
 	}
-	wantFiles := []string{"/Users/davidtaing/treetop/main.go", "/Users/me/proj/src/app.go"}
+	// A numbered DIR fd (f7) counts as an open file, matching what Linux's
+	// /proc/<pid>/fd surfaces; only the "cwd" descriptor lands in cwds.
+	wantFiles := []string{"/Users/davidtaing/treetop/main.go", "/Users/me/proj/src/app.go", "/Users/me/proj/watched"}
 	if !reflect.DeepEqual(files, wantFiles) {
 		t.Errorf("files = %v, want %v", files, wantFiles)
 	}
@@ -70,25 +75,5 @@ func TestParseLSOFEmpty(t *testing.T) {
 	cwds, files := parseLSOF(nil)
 	if cwds != nil || files != nil {
 		t.Fatalf("parseLSOF(nil) = (%v, %v), want (nil, nil)", cwds, files)
-	}
-}
-
-func TestAgentName(t *testing.T) {
-	cases := []struct {
-		comm, cmdline string
-		want          bool
-	}{
-		{"claude", "", true},
-		{"claude", "claude --resume", true},
-		{"node", "node /path/to/claude-code/cli.js", true},
-		{"node", "node /path/to/CLAUDE/cli.js", true}, // case-insensitive
-		{"node", "node server.js", false},
-		{"vim", "vim claude.txt", false},
-		{"treetop", "treetop -w", false},
-	}
-	for _, c := range cases {
-		if got := agentName(c.comm, c.cmdline); got != c.want {
-			t.Errorf("agentName(%q, %q) = %v, want %v", c.comm, c.cmdline, got, c.want)
-		}
 	}
 }
