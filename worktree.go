@@ -31,6 +31,13 @@ func listWorktrees(dir string) []Worktree {
 // column is invisible but spares a full directory walk on every tick.
 const editCacheTTL = 4 * time.Second
 
+// editCacheStale bounds how long an entry survives without being recomputed.
+// A present worktree refreshes its entry every editCacheTTL, so anything older
+// than several TTLs belongs to a worktree that has vanished; sweeping those out
+// keeps editCache roughly the size of the active worktree set rather than
+// growing monotonically across a long watch session.
+const editCacheStale = 10 * editCacheTTL
+
 type editEntry struct {
 	at      time.Time // when this result was computed
 	mtime   time.Time
@@ -61,6 +68,14 @@ func newestEdit(worktreePath string) (time.Time, bool) {
 
 	editCacheMu.Lock()
 	editCache[worktreePath] = editEntry{at: now, mtime: mtime, hasTime: hasTime}
+	// Evict entries for worktrees that have vanished: they stop being refreshed
+	// and would otherwise leak. The map tracks the active worktree set, so this
+	// sweep is cheap.
+	for path, e := range editCache {
+		if now.Sub(e.at) > editCacheStale {
+			delete(editCache, path)
+		}
+	}
 	editCacheMu.Unlock()
 
 	return mtime, hasTime
