@@ -22,6 +22,33 @@ func TestParseFlagsInvalidPattern(t *testing.T) {
 	}
 }
 
+func TestParseFlagsDepthClamp(t *testing.T) {
+	// --depth is clamped to [1, maxScanDepth]; a non-numeric value errors.
+	cases := []struct {
+		arg  string
+		want int
+	}{
+		{"0", 1},            // below the floor -> 1
+		{"1", 1},            // default
+		{"3", maxScanDepth}, // at the cap
+		{"9", maxScanDepth}, // above the cap -> clamped
+		{"-2", 1},           // negative -> 1
+	}
+	for _, tc := range cases {
+		opts, err := parseFlags([]string{"--root", "/some/dir", "--depth", tc.arg})
+		if err != nil {
+			t.Fatalf("parseFlags(--depth %s): %v", tc.arg, err)
+		}
+		if opts.depth != tc.want {
+			t.Errorf("--depth %s: depth = %d, want %d", tc.arg, opts.depth, tc.want)
+		}
+	}
+
+	if _, err := parseFlags([]string{"--root", "/some/dir", "--depth", "abc"}); err == nil {
+		t.Error("expected error for non-numeric --depth, got nil")
+	}
+}
+
 func TestParseFlagsNoRootNoHome(t *testing.T) {
 	// An empty HOME makes os.UserHomeDir() fail on Linux; with no --root the
 	// scan root is unresolvable and parseFlags must error rather than scan
