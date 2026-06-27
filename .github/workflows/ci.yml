@@ -6,7 +6,25 @@ on:
   pull_request:
 
 jobs:
+  # Detect whether anything other than Markdown docs changed. The build job
+  # always runs (so the required "build (…)" status checks always report), but
+  # the heavy Go steps are skipped for docs-only changes.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            code:
+              - '**'
+              - '!**/*.md'
+
   build:
+    needs: changes
     # Run on Linux and macOS so the platform-specific session scan
     # (session_linux.go / session_darwin.go) is built and tested on both.
     strategy:
@@ -16,10 +34,12 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v6
+      - if: needs.changes.outputs.code == 'true'
+        uses: actions/setup-go@v6
         with:
           go-version: "1.26"
       - name: gofmt
+        if: needs.changes.outputs.code == 'true'
         run: |
           unformatted=$(gofmt -l .)
           if [ -n "$unformatted" ]; then
@@ -27,6 +47,11 @@ jobs:
             echo "$unformatted"
             exit 1
           fi
-      - run: go vet ./...
-      - run: go test ./...
-      - run: go build ./...
+      - if: needs.changes.outputs.code == 'true'
+        run: go vet ./...
+      - if: needs.changes.outputs.code == 'true'
+        run: go test ./...
+      - if: needs.changes.outputs.code == 'true'
+        run: go build ./...
+      - if: needs.changes.outputs.code != 'true'
+        run: echo "Docs-only change — skipping Go build/test."
