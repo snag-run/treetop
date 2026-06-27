@@ -1,0 +1,19 @@
+version: 2
+updates:
+  # GitHub Actions used by CI (security-relevant; we pin to an allow-list).
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # Go module dependencies (currently just golang.org/x/*).
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      go-modules:
+        patterns: ["*"]
