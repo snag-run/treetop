@@ -155,7 +155,8 @@ pull request whose head is that worktree's branch. The status comes from the
 When `gh` is missing or unauthenticated, the column is blank (never an error) and
 the header says why — e.g. `PR checks: gh not authenticated — run gh auth login`.
 A repo with no GitHub remote stays quietly blank. In `--projects` view the glyph
-is the worst status across the project's worktrees.
+is the worst status across the project's worktrees. The open PR's number is shown
+as a dim `#123` after the branch.
 
 | Glyph | Meaning |
 |-------|---------|

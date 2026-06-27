@@ -14,6 +14,7 @@ type Worktree struct {
 	Edited   time.Time  // newest working-tree file mtime (unstaged edits included)
 	HasEdit  bool       // whether Edited could be determined
 	HasPR    bool       // an open PR was found for this branch (only set with --pr)
+	PRNumber int        // the open PR's number; meaningful only when HasPR
 	Check    CheckState // rolled-up CI status of that PR; meaningful only when HasPR
 	Checks   []Check    // per-check breakdown behind Check, for the --checks rows; nil otherwise
 }
