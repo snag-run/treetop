@@ -6,18 +6,25 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 )
 
 const usage = `treetop - track git worktrees across projects
 
 Usage:
-  treetop [flags] [filter]
+  treetop [flags] [pattern...]
 
-  [filter] is an optional substring matched against project names.
+  [pattern] is an optional regular expression matched against project names
+  (case-insensitive). Pass several patterns, or use alternation, to match more
+  than one project; a project is shown if it matches any pattern.
+
+    treetop 'snag|athanor'     # projects matching snag OR athanor
+    treetop -e snag -e athanor # the same, grep-style
 
 Flags:
   -w, --watch            live mode: refresh continuously (like top)
+  -e, --regexp PATTERN   project-name pattern (repeatable; OR'd together)
   -i, --interval N       refresh interval in seconds with --watch (default 2)
   -p, --projects         collapse to one line per project (no worktrees)
   --in-use               show only worktrees with a live session (in use)
@@ -31,7 +38,7 @@ top-level claude sessions; it cannot see in-process subagents.
 `
 
 type options struct {
-	filter       string
+	patterns     []*regexp.Regexp
 	watch        bool
 	interval     int
 	onlyInUse    bool
@@ -59,10 +66,13 @@ func parseFlags(args []string) (options, error) {
 		projectsOnly bool
 		noColor      bool
 		roots        stringSlice
+		exprs        stringSlice
 	)
 	fs.BoolVar(&watch, "watch", false, "")
 	fs.BoolVar(&watch, "w", false, "")
 	fs.BoolVar(&watch, "live", false, "") // alias for --watch
+	fs.Var(&exprs, "regexp", "")
+	fs.Var(&exprs, "e", "")
 	fs.IntVar(&interval, "interval", 2, "")
 	fs.IntVar(&interval, "i", 2, "")
 	fs.BoolVar(&onlyInUse, "in-use", false, "")
@@ -87,8 +97,16 @@ func parseFlags(args []string) (options, error) {
 		}
 	}
 
+	// Patterns come from -e/--regexp flags and from positional args; a project
+	// is shown if its name matches any of them (grep-style OR). Matching is
+	// case-insensitive.
+	patterns, err := compilePatterns(append(append([]string{}, exprs...), fs.Args()...))
+	if err != nil {
+		return options{}, err
+	}
+
 	return options{
-		filter:       strings.Join(fs.Args(), " "),
+		patterns:     patterns,
 		watch:        watch,
 		interval:     interval,
 		onlyInUse:    onlyInUse,
@@ -140,12 +158,43 @@ func collect(opts options) ([]Project, bool, error) {
 	return filterProjects(projects, opts), scan.supported, nil
 }
 
+// compilePatterns compiles each non-empty pattern into a case-insensitive
+// regular expression. An invalid pattern is a usage error.
+func compilePatterns(raw []string) ([]*regexp.Regexp, error) {
+	var patterns []*regexp.Regexp
+	for _, p := range raw {
+		if p == "" {
+			continue
+		}
+		re, err := regexp.Compile("(?i)" + p)
+		if err != nil {
+			return nil, fmt.Errorf("invalid pattern %q: %w", p, err)
+		}
+		patterns = append(patterns, re)
+	}
+	return patterns, nil
+}
+
+// matchesName reports whether name matches any pattern. With no patterns,
+// everything matches.
+func matchesName(patterns []*regexp.Regexp, name string) bool {
+	if len(patterns) == 0 {
+		return true
+	}
+	for _, re := range patterns {
+		if re.MatchString(name) {
+			return true
+		}
+	}
+	return false
+}
+
 // filterProjects applies the name filter and in-use/open mode, dropping
 // projects that end up with no matching worktrees.
 func filterProjects(projects []Project, opts options) []Project {
 	var out []Project
 	for _, p := range projects {
-		if opts.filter != "" && !strings.Contains(strings.ToLower(p.Name), strings.ToLower(opts.filter)) {
+		if !matchesName(opts.patterns, p.Name) {
 			continue
 		}
 		var wts []Worktree

@@ -49,16 +49,24 @@ go build -o treetop .
   **g**/**G** (top/bottom). Quit with **q** or **Ctrl-C**.
 
 ```sh
-treetop                 # snapshot of every project's worktrees
-treetop snag            # filter to projects whose name contains "snag"
-treetop -p              # collapse to one line per project
-treetop -w              # live mode, refreshing every 2s
-treetop -w -i 5         # live mode, every 5s
-treetop -w -p           # live, collapsed to projects
-treetop --in-use        # only worktrees with a live session
-treetop --open          # only worktrees with no session
-treetop --root ~/code   # scan a specific directory (repeatable)
+treetop                  # snapshot of every project's worktrees
+treetop snag             # filter to projects whose name matches "snag"
+treetop 'snag|athanor'   # match either project (regex alternation)
+treetop -e snag -e athanor  # same, grep-style; -e is repeatable
+treetop -p               # collapse to one line per project
+treetop -w               # live mode, refreshing every 2s
+treetop -w -i 5          # live mode, every 5s
+treetop -w -p            # live, collapsed to projects
+treetop -w -e snag -e athanor  # live mode, multiple projects
+treetop --in-use         # only worktrees with a live session
+treetop --open           # only worktrees with no session
+treetop --root ~/code    # scan a specific directory (repeatable)
 ```
+
+The project filter is a **case-insensitive regular expression** matched against
+project names. Pass it positionally or with `-e/--regexp`; give several patterns
+(or use `|` alternation) to match more than one project. Quote any pattern
+containing `|` so your shell doesn't treat it as a pipe.
 
 A collapsed (`-p`) view shows the worktree count, how many are in use, and the
 most recent change per project — handy when you have many projects:
