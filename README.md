@@ -25,11 +25,41 @@ checkout / stage).
 
 ## Install
 
+### Download a binary
+
+Prebuilt binaries for Linux and macOS (Intel + Apple Silicon) are attached to
+each [release](https://github.com/snag-run/treetop/releases/latest). Grab the one
+for your platform, drop it on your `PATH`, and make it executable:
+
+```sh
+# Detects your platform: linux/darwin and amd64/arm64
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')      # linux or darwin
+ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+VERSION=0.1.0
+
+curl -fsSL -o treetop \
+  "https://github.com/snag-run/treetop/releases/download/v${VERSION}/treetop_${VERSION}_${OS}_${ARCH}"
+chmod +x treetop
+sudo mv treetop /usr/local/bin/
+```
+
+On macOS, Gatekeeper may quarantine the binary on first run; clear it with
+`xattr -d com.apple.quarantine /usr/local/bin/treetop`.
+
+Verify the download against the published checksums (optional):
+
+```sh
+curl -fsSL -O "https://github.com/snag-run/treetop/releases/download/v${VERSION}/SHA256SUMS"
+shasum -a 256 -c SHA256SUMS --ignore-missing
+```
+
+### Install with Go
+
 ```sh
 go install github.com/snag-run/treetop@latest
 ```
 
-Or build from source:
+### Build from source
 
 ```sh
 git clone https://github.com/snag-run/treetop
