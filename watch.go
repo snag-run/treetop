@@ -116,6 +116,9 @@ func runWatch(opts options) {
 
 	// Live-filter state. filtering is true while the filter box is open for
 	// editing; query persists (and stays applied) after Enter until cleared.
+	// The box is disabled when CLI grep flags are in use — the filter is
+	// already pinned at launch, so an in-TUI filter would just be confusing.
+	filterable := len(opts.patterns) == 0
 	filtering := false
 	query := ""
 
@@ -178,7 +181,7 @@ func runWatch(opts options) {
 		}
 		fmt.Fprint(out, watchFooter(r, footerState{
 			offset: offset, total: len(body), viewport: viewport,
-			filtering: filtering, query: query, validQuery: valid,
+			filterable: filterable, filtering: filtering, query: query, validQuery: valid,
 		}))
 		out.Flush()
 	}
@@ -255,7 +258,9 @@ func runWatch(opts options) {
 			case ' ':
 				offset += viewport
 			case '/':
-				filtering = true // open the filter box
+				if filterable {
+					filtering = true // open the filter box
+				}
 			}
 		}
 		return false
@@ -496,6 +501,7 @@ func parseMouse(br *bufio.Reader) (event, bool) {
 // footerState is the input to the bottom status line.
 type footerState struct {
 	offset, total, viewport int
+	filterable              bool   // the live filter box is available (no CLI grep flags)
 	filtering               bool   // the filter box is open for editing
 	query                   string // active filter text (may be empty)
 	validQuery              bool   // whether query compiles as a regex
@@ -523,8 +529,11 @@ func watchFooter(r renderer, s footerState) string {
 		return r.paint(colDim, line)
 	}
 	last := min(s.offset+s.viewport, s.total)
-	line := fmt.Sprintf("  rows %d–%d of %d   ↑/↓ · PgUp/PgDn · g/G · / filter · q quit",
-		s.offset+1, last, s.total)
+	keys := "↑/↓ · PgUp/PgDn · g/G · q quit"
+	if s.filterable {
+		keys = "↑/↓ · PgUp/PgDn · g/G · / filter · q quit"
+	}
+	line := fmt.Sprintf("  rows %d–%d of %d   %s", s.offset+1, last, s.total, keys)
 	if s.query != "" {
 		line += "   [/" + s.query + "]"
 	}

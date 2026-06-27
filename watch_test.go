@@ -122,6 +122,17 @@ func TestWatchFooterFilterMode(t *testing.T) {
 	if !strings.Contains(noMatch, "no matches") {
 		t.Errorf("zero results with a query should say no matches: %q", noMatch)
 	}
+
+	// The "/ filter" hint shows only when the live filter box is available
+	// (i.e. no CLI grep flags pinned the filter at launch).
+	withBox := watchFooter(r, footerState{total: 3, viewport: 10, filterable: true})
+	if !strings.Contains(withBox, "/ filter") {
+		t.Errorf("filterable footer should advertise the filter key: %q", withBox)
+	}
+	noBox := watchFooter(r, footerState{total: 3, viewport: 10, filterable: false})
+	if strings.Contains(noBox, "/ filter") {
+		t.Errorf("CLI-filtered footer should hide the filter key: %q", noBox)
+	}
 }
 
 func names(ps []Project) []string {
