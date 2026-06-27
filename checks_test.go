@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"regexp"
 	"strings"
 	"testing"
@@ -172,6 +173,56 @@ func TestRollupChecksDeduplicates(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("check[%d] = %+v, want %+v", i, got[i], want[i])
 		}
+	}
+}
+
+// TestRollupChecksCapturesURL asserts each per-check row carries its link: a
+// CheckRun's detailsUrl (its Actions run page) and a StatusContext's targetUrl
+// (the external CI's page). When the same name folds twice, the first non-empty
+// link is kept so a later URL-less stale run can't blank an established link.
+func TestRollupChecksCapturesURL(t *testing.T) {
+	const runURL = "https://github.com/o/r/actions/runs/1"
+	const extURL = "https://ci.example.com/build/9"
+	entries := []ghRollupEntry{
+		{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "SUCCESS", Name: "build", DetailsURL: runURL},
+		{Typename: "StatusContext", State: "SUCCESS", Context: "lint", TargetURL: extURL},
+		{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "SUCCESS", Name: "build"}, // dup, no URL
+	}
+	got := rollupChecks(entries)
+
+	urls := map[string]string{}
+	for _, c := range got {
+		urls[c.Name] = c.URL
+	}
+	if urls["build"] != runURL {
+		t.Errorf("build URL = %q, want %q (first link kept across the dup)", urls["build"], runURL)
+	}
+	if urls["lint"] != extURL {
+		t.Errorf("lint URL = %q, want %q", urls["lint"], extURL)
+	}
+}
+
+// TestGHPRJSONUnmarshal asserts the PR-level url and the per-entry detailsUrl /
+// targetUrl fields we added to the gh query actually decode, so the link data
+// reaches the renderer.
+func TestGHPRJSONUnmarshal(t *testing.T) {
+	const blob = `[{"number":7,"url":"https://github.com/o/r/pull/7","headRefName":"feat",
+	  "statusCheckRollup":[
+	    {"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"SUCCESS","detailsUrl":"https://github.com/o/r/actions/runs/1"},
+	    {"__typename":"StatusContext","context":"lint","state":"SUCCESS","targetUrl":"https://ci.example.com/9"}
+	  ]}]`
+	var prs []ghPR
+	if err := json.Unmarshal([]byte(blob), &prs); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(prs) != 1 {
+		t.Fatalf("got %d PRs, want 1", len(prs))
+	}
+	if prs[0].URL != "https://github.com/o/r/pull/7" {
+		t.Errorf("PR url = %q", prs[0].URL)
+	}
+	if prs[0].Rollup[0].DetailsURL == "" || prs[0].Rollup[1].TargetURL == "" {
+		t.Errorf("rollup link fields did not decode: %+v", prs[0].Rollup)
 	}
 }
 
