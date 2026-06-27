@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -101,10 +102,14 @@ func walkNewest(worktreePath string) (time.Time, bool) {
 // still get walked; pruning whole directories (node_modules, target, dist) is
 // what keeps the walk cheap and the mtime meaningful.
 func ignoredDirs(worktreePath string) map[string]bool {
-	out, err := exec.Command("git", "-C", worktreePath,
+	// Bound the call: this runs on the dashboard refresh path, and a hung git or
+	// wedged filesystem must not stall it.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "git", "-C", worktreePath,
 		"ls-files", "--others", "--ignored", "--exclude-standard", "--directory").Output()
 	if err != nil {
-		return nil // not a git repo, or git unavailable: prune nothing but .git
+		return nil // not a git repo, git unavailable, or timed out: prune only .git
 	}
 	dirs := map[string]bool{}
 	for line := range strings.SplitSeq(string(out), "\n") {

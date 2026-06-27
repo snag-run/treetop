@@ -32,7 +32,9 @@ while [ $# -gt 0 ]; do
 		;;
 	--uninstall) UNINSTALL=1 ;;
 	-h | --help)
-		sed -n '2,28p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+		# Print the header comment block (skip the shebang, stop at the first
+		# non-comment line) with the leading "# " stripped.
+		awk 'NR==1{next} /^#/{sub(/^# ?/,""); print; next} {exit}' "${BASH_SOURCE[0]}"
 		exit 0
 		;;
 	*)

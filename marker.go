@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -29,22 +30,43 @@ const markerName = ".treetop-inuse"
 // write, so a hook that forgets to clean up doesn't pin a worktree forever.
 const markerTTL = 5 * time.Minute
 
+// markerHeadMax caps how much of the marker we read: enough for a PID line, but
+// bounded so a pathological file can't trigger an unbounded read on the refresh
+// path.
+const markerHeadMax = 128
+
 // markerActive reports whether worktreePath holds a live .treetop-inuse marker.
 func markerActive(worktreePath string) bool {
 	path := filepath.Join(worktreePath, markerName)
 	fi, err := os.Lstat(path)
-	if err != nil {
-		return false
+	if err != nil || !fi.Mode().IsRegular() {
+		return false // absent, or not a plain file (don't follow a symlink)
 	}
-	data, err := os.ReadFile(path)
+	data, err := readHead(path, markerHeadMax)
 	if err != nil {
 		return false
 	}
 	if pid, ok := firstLinePID(data); ok {
 		return pidAlive(pid)
 	}
-	// No PID: trust the marker only while its mtime is recent.
-	return time.Since(fi.ModTime()) <= markerTTL
+	// No PID: trust the marker only while its mtime is recent — and not in the
+	// future, which would otherwise read as perpetually fresh.
+	age := time.Since(fi.ModTime())
+	return age >= 0 && age <= markerTTL
+}
+
+// readHead reads up to max bytes from the start of a file.
+func readHead(path string, max int) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, int64(max)))
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
 }
 
 // firstLinePID parses a PID from the marker's first line, if present.

@@ -57,6 +57,33 @@ func TestMarkerActive(t *testing.T) {
 			t.Error("empty marker older than markerTTL should not be active")
 		}
 	})
+
+	t.Run("no PID, future mtime", func(t *testing.T) {
+		dir := t.TempDir()
+		writeMarker(t, dir, "")
+		future := time.Now().Add(time.Hour)
+		if err := os.Chtimes(filepath.Join(dir, markerName), future, future); err != nil {
+			t.Fatal(err)
+		}
+		if markerActive(dir) {
+			t.Error("marker with a future mtime should not be active")
+		}
+	})
+
+	t.Run("symlink is not followed", func(t *testing.T) {
+		dir := t.TempDir()
+		target := filepath.Join(dir, "real")
+		// A live-PID payload that WOULD pass if the symlink were followed.
+		if err := os.WriteFile(target, []byte(strconv.Itoa(os.Getpid())), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, filepath.Join(dir, markerName)); err != nil {
+			t.Skipf("symlink unsupported: %v", err)
+		}
+		if markerActive(dir) {
+			t.Error("a symlink marker should be rejected, not followed")
+		}
+	})
 }
 
 func TestFirstLinePID(t *testing.T) {
