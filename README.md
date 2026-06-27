@@ -11,15 +11,17 @@ them, and shows how recently each one changed.
 ```
 $ treetop snag
 snag
-  ● ~/snag-wt1   fix/234-surface-truncation-error  15 hours ago
-  ● ~/snag-docs  feat/renderer-host-brand          23 minutes ago
-    ~/snag-wt-deps   chore/deps-batch-majors        14 hours ago
-    ~/snag           (bare)                         1 day ago
+  ● ~/snag-wt1       fix/234-surface-truncation-error  edited 8s   · changed 15h
+  ● ~/snag-docs      feat/renderer-host-brand          edited 23m  · changed 23m
+    ~/snag-wt-deps   chore/deps-batch-majors           edited 14h  · changed 14h
+    ~/snag           (bare)                            edited —    · changed 1d
 ```
 
 `●` marks a worktree that is **in use** (a live session is running there); a
-worktree with no marker is **open**. The last column shows when the worktree
-last changed (last commit / checkout / stage).
+worktree with no marker is **open**. The two time columns are distinct signals:
+**edited** is the newest working-tree file change (including unstaged edits —
+e.g. an agent mid-task), while **changed** is the last git activity (commit /
+checkout / stage).
 
 ## Install
 
@@ -73,8 +75,8 @@ most recent change per project — handy when you have many projects:
 
 ```
 $ treetop -p
-  ● snag      3/10 in use   29 minutes ago
-    athanor   0/7 in use    2 weeks ago
+  ● snag      3/10 in use   edited 14s
+    athanor   0/7 in use    edited 2w
     ...
 ```
 
@@ -95,23 +97,65 @@ them by repository. A bare repo is discovered via any of its linked worktrees.
 
 - **in use** — a worktree with a live session running inside it (marked `●`).
 - **open** — a worktree with no session.
-- **last changed** — the most recent git activity in the worktree (commit /
-  checkout / stage), shown in natural wording ("just now", "5 minutes ago").
+- **edited** — the newest working-tree file change, including unstaged edits (so
+  an agent editing files shows up immediately), in compact wording (`12s`, `5m`,
+  `2d`). Shown as `—` when nothing is present (e.g. a bare repo).
+- **changed** — the most recent git activity in the worktree (commit / checkout
+  / stage).
 
 ## How in-use detection works (and its limits)
 
-Detection is **best-effort and Linux-only** — it reads `/proc` to find top-level
-`claude` processes and maps each to its working directory. A worktree is marked
-in use if a session's working directory is at or below it.
+`treetop` decides a worktree is **in use** from two independent signals:
+
+1. **A `/proc` scan** (best-effort, Linux-only). It finds live `claude`
+   processes and marks a worktree if the process is working at or below it —
+   either by its working directory, or by a file it currently holds open. The
+   open-file check is what lets `treetop` catch **subagents**, which run
+   in-process and never `chdir` into the worktree they target. Because an open
+   descriptor is transient, a worktree stays marked for 30s after the signal
+   last appeared, so the `●` doesn't flicker.
+2. **A `.treetop-inuse` marker file** at the worktree root. This is the
+   deterministic, cross-platform signal: whatever drops the marker — not
+   `treetop` — reports the activity. The marker's first line may be the owning
+   process's PID, in which case it's honoured only while that process is alive
+   (a stale marker from a crashed writer is ignored).
 
 Known limits:
 
-- **Linux only.** On other platforms the in-use marker shows `?` (unknown).
-- **No subagents.** A Claude Code subagent runs in-process inside its parent and
-  never `chdir`s into the worktree it targets, so it leaves no per-worktree
-  footprint. `treetop` can't see it.
-- A blank/`?` means *unknown*, not *definitely open* — a session whose working
-  directory has drifted out of the tree won't be counted.
+- The `/proc` scan is **Linux only**; elsewhere the marker file still works. A
+  blank/`?` means *unknown*, not *definitely open*.
+- A session whose working directory has drifted out of every worktree, and which
+  holds no files open under one, won't be counted by the `/proc` scan alone.
+
+### Marking agent (subagent) worktrees in use
+
+The included Claude Code hooks drop and remove the `.treetop-inuse` marker as
+subagents start and stop, so worktrees an agent is working in light up even
+though they leave no other footprint:
+
+```sh
+# Global: fires in every project (recommended for cross-project tracking)
+hooks/install.sh --global
+
+# Repo: scoped to one repository, committable alongside it
+hooks/install.sh --repo .
+
+# Remove again (per scope)
+hooks/install.sh --global --uninstall
+```
+
+Claude Code **merges hooks from every scope**, so global and repo installs are
+independent and additive — pick one or run both. `--global` writes to
+`~/.claude/settings.json` and installs the scripts under `~/.claude/hooks/`;
+`--repo` writes to `<repo>/.claude/settings.json` and references the scripts via
+`$CLAUDE_PROJECT_DIR`, so committing `.claude/` shares them with everyone who
+clones the repo. The installer merges into existing settings (it never clobbers
+other hooks), is idempotent, and for `--global` also adds `.treetop-inuse` to
+your global gitignore so the marker doesn't litter your repos. Requires `jq`.
+
+The hooks key on `SubagentStart` / `SubagentStop`. If several subagents share one
+worktree, the first to stop clears the marker early — the `/proc` scan covers
+that gap.
 
 ## License
 

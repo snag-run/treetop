@@ -11,6 +11,8 @@ type Worktree struct {
 	InUse    bool      // a live session (e.g. claude) is running here
 	Changed  time.Time // last git activity (commit/checkout/stage)
 	HasTime  bool      // whether Changed could be determined
+	Edited   time.Time // newest working-tree file mtime (unstaged edits included)
+	HasEdit  bool      // whether Edited could be determined
 }
 
 // Ref renders the human-readable branch / state of a worktree.

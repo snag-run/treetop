@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -19,8 +22,104 @@ func listWorktrees(dir string) []Worktree {
 	wts := parseWorktrees(out)
 	for i := range wts {
 		wts[i].Changed, wts[i].HasTime = lastActivity(wts[i].Path)
+		wts[i].Edited, wts[i].HasEdit = newestEdit(wts[i].Path)
 	}
 	return wts
+}
+
+// editCacheTTL bounds how often newestEdit re-walks a worktree. The dashboard
+// refreshes every couple of seconds; a few seconds of staleness on the "edited"
+// column is invisible but spares a full directory walk on every tick.
+const editCacheTTL = 4 * time.Second
+
+type editEntry struct {
+	at      time.Time // when this result was computed
+	mtime   time.Time
+	hasTime bool
+}
+
+var (
+	editCacheMu sync.Mutex
+	editCache   = map[string]editEntry{}
+)
+
+// newestEdit returns the most recent modification time of any file in the
+// worktree, ignoring the .git directory and anything git ignores (build output,
+// vendored deps, etc.). This reflects actual file edits — including unstaged
+// ones — which lastActivity (git metadata only) cannot see. Results are cached
+// per worktree for editCacheTTL.
+func newestEdit(worktreePath string) (time.Time, bool) {
+	now := time.Now()
+
+	editCacheMu.Lock()
+	if e, ok := editCache[worktreePath]; ok && now.Sub(e.at) < editCacheTTL {
+		editCacheMu.Unlock()
+		return e.mtime, e.hasTime
+	}
+	editCacheMu.Unlock()
+
+	mtime, hasTime := walkNewest(worktreePath)
+
+	editCacheMu.Lock()
+	editCache[worktreePath] = editEntry{at: now, mtime: mtime, hasTime: hasTime}
+	editCacheMu.Unlock()
+
+	return mtime, hasTime
+}
+
+// walkNewest walks the worktree, pruning .git and git-ignored directories, and
+// returns the newest file mtime found.
+func walkNewest(worktreePath string) (time.Time, bool) {
+	ignored := ignoredDirs(worktreePath)
+
+	var latest time.Time
+	found := false
+	filepath.WalkDir(worktreePath, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil // unreadable entry: skip it, keep walking
+		}
+		if d.IsDir() {
+			if path != worktreePath && (d.Name() == ".git" || ignored[path]) {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if d.Name() == markerName {
+			return nil // our own in-use marker isn't a working-tree edit
+		}
+		if fi, err := d.Info(); err == nil {
+			if mt := fi.ModTime(); mt.After(latest) {
+				latest, found = mt, true
+			}
+		}
+		return nil
+	})
+	return latest, found
+}
+
+// ignoredDirs returns the set of absolute directory paths git ignores in the
+// worktree, so walkNewest can prune them. Files git ignores at the leaf level
+// still get walked; pruning whole directories (node_modules, target, dist) is
+// what keeps the walk cheap and the mtime meaningful.
+func ignoredDirs(worktreePath string) map[string]bool {
+	// Bound the call: this runs on the dashboard refresh path, and a hung git or
+	// wedged filesystem must not stall it.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "git", "-C", worktreePath,
+		"ls-files", "--others", "--ignored", "--exclude-standard", "--directory").Output()
+	if err != nil {
+		return nil // not a git repo, git unavailable, or timed out: prune only .git
+	}
+	dirs := map[string]bool{}
+	for line := range strings.SplitSeq(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || !strings.HasSuffix(line, "/") {
+			continue // --directory lists ignored dirs with a trailing slash
+		}
+		dirs[filepath.Join(worktreePath, line)] = true
+	}
+	return dirs
 }
 
 // lastActivity returns the most recent git-activity time for a worktree, read

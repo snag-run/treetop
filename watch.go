@@ -175,8 +175,11 @@ func refreshLoop(opts options, r renderer, out chan frame, done <-chan struct{})
 	ticker := time.NewTicker(time.Duration(opts.interval) * time.Second)
 	defer ticker.Stop()
 
+	// One tracker for the session, so in-use decay carries across refreshes.
+	tr := newTracker(inUseDecay)
+
 	emit := func() {
-		projects, supported, err := collect(opts)
+		projects, supported, err := collect(opts, tr)
 		f := frame{header: headerLines(r, opts, projects, supported)}
 		if err != nil {
 			f.body = []string{"  error: " + err.Error()}
@@ -303,8 +306,9 @@ func runWatchPlain(opts options) {
 	r := newRenderer(out, opts.color, opts.projectsOnly)
 	ticker := time.NewTicker(time.Duration(opts.interval) * time.Second)
 	defer ticker.Stop()
+	tr := newTracker(inUseDecay)
 	for {
-		projects, supported, err := collect(opts)
+		projects, supported, err := collect(opts, tr)
 		fmt.Fprint(out, clearHome)
 		for _, l := range headerLines(r, opts, projects, supported) {
 			fmt.Fprintln(out, l)
