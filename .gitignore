@@ -1,0 +1,7 @@
+# build output
+/treetop
+/dist/
+
+# go
+*.test
+*.out
