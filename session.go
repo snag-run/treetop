@@ -27,19 +27,27 @@ type sessionScan struct {
 }
 
 // agentName reports whether a process named comm with the given command line
-// looks like a Claude Code session: either a process literally named `claude`,
-// or a `node` process whose command line invokes claude (covers npm-launched
-// installs). comm is the executable's base name; cmdline is its full,
-// space-joined command line (may be empty when unavailable).
+// looks like a supported agent session. Native Claude Code and Codex binaries
+// are matched by process name; node-launched installs are matched by command
+// line (covers npm-launched wrappers). comm is the executable's base name;
+// cmdline is its full, space-joined command line (may be empty when unavailable).
 func agentName(comm, cmdline string) bool {
 	switch comm {
-	case "claude":
+	case "claude", "codex":
 		return true
 	case "node":
-		return strings.Contains(strings.ToLower(cmdline), "claude")
+		return nodeAgentCommandLine(cmdline)
 	default:
 		return false
 	}
+}
+
+func nodeAgentCommandLine(cmdline string) bool {
+	lower := strings.ToLower(cmdline)
+	return strings.Contains(lower, "claude") ||
+		strings.Contains(lower, "@openai/codex") ||
+		strings.Contains(lower, "/codex/") ||
+		strings.Contains(lower, `\codex\`)
 }
 
 // markInUse flags every worktree that has a live session at or below its path.

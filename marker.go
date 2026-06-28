@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// markerName is the lockfile a session (e.g. a Claude Code hook) drops into a
+// markerName is the lockfile a session hook drops into a
 // worktree to declare it in use. This is the deterministic, cross-platform
 // counterpart to the best-effort /proc scan: it works on every OS and, unlike
 // the cwd scan, it sees in-process subagents because the hook — not treetop —

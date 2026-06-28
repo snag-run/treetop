@@ -26,6 +26,7 @@ extract_cwd() {
 input=$(cat)
 
 cwd=$(extract_cwd "$input")
+cwd=${cwd:-$PWD}
 [ -n "$cwd" ] || exit 0
 
 root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || exit 0
