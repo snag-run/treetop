@@ -90,11 +90,10 @@ func runWatch(opts options) {
 
 	out := bufio.NewWriter(os.Stdout)
 	mouseReporting := watchMouseReporting(opts)
-	fmt.Fprint(out, altScreenOn+cursorHide)
-	if mouseReporting {
-		fmt.Fprint(out, mouseOn)
+	if err := writeWatchSetup(out, mouseReporting); err != nil {
+		_ = term.Restore(inFd, oldState)
+		return
 	}
-	out.Flush()
 
 	cleanup := func() {
 		if mouseReporting {
@@ -342,6 +341,18 @@ func runWatch(opts options) {
 			render()
 		}
 	}
+}
+
+func writeWatchSetup(out *bufio.Writer, mouseReporting bool) error {
+	if _, err := fmt.Fprint(out, altScreenOn+cursorHide); err != nil {
+		return err
+	}
+	if mouseReporting {
+		if _, err := fmt.Fprint(out, mouseOn); err != nil {
+			return err
+		}
+	}
+	return out.Flush()
 }
 
 // watchMouseReporting reports whether watch mode should ask the terminal to
