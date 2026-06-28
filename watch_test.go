@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bufio"
+	"errors"
 	"regexp"
 	"strings"
 	"testing"
@@ -98,6 +100,56 @@ func TestTrimLastRune(t *testing.T) {
 		if got := trimLastRune(tc.in); got != tc.want {
 			t.Errorf("trimLastRune(%q) = %q, want %q", tc.in, got, tc.want)
 		}
+	}
+}
+
+type failingWriter struct{}
+
+var errFailingWriter = errors.New("write failed")
+
+func (failingWriter) Write([]byte) (int, error) {
+	return 0, errFailingWriter
+}
+
+func TestWriteWatchSetup(t *testing.T) {
+	var plain strings.Builder
+	if err := writeWatchSetup(bufio.NewWriter(&plain), false); err != nil {
+		t.Fatalf("writeWatchSetup without mouse reporting: %v", err)
+	}
+	if got := plain.String(); got != altScreenOn+cursorHide {
+		t.Errorf("writeWatchSetup without mouse reporting = %q, want %q", got, altScreenOn+cursorHide)
+	}
+
+	var mouse strings.Builder
+	if err := writeWatchSetup(bufio.NewWriter(&mouse), true); err != nil {
+		t.Fatalf("writeWatchSetup with mouse reporting: %v", err)
+	}
+	if got := mouse.String(); got != altScreenOn+cursorHide+mouseOn {
+		t.Errorf("writeWatchSetup with mouse reporting = %q, want %q", got, altScreenOn+cursorHide+mouseOn)
+	}
+
+	if err := writeWatchSetup(bufio.NewWriter(failingWriter{}), true); !errors.Is(err, errFailingWriter) {
+		t.Fatalf("writeWatchSetup failure = %v, want %v", err, errFailingWriter)
+	}
+}
+
+func TestWatchMouseReporting(t *testing.T) {
+	cases := []struct {
+		name string
+		opts options
+		want bool
+	}{
+		{name: "plain watch", opts: options{}, want: true},
+		{name: "PR links", opts: options{pr: true}, want: false},
+		{name: "check links", opts: options{checks: true}, want: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := watchMouseReporting(tc.opts); got != tc.want {
+				t.Errorf("watchMouseReporting() = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 
