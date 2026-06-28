@@ -18,6 +18,7 @@ func TestAgentName(t *testing.T) {
 		{"node", "node /path/to/CLAUDE/cli.js", true}, // case-insensitive
 		{"node", "node /path/to/@openai/codex/bin/codex.js", true},
 		{"node", "node /path/to/CODEX/cli.js", true}, // case-insensitive
+		{"node", `node C:\Users\me\AppData\Roaming\npm\node_modules\codex\cli.js`, true},
 		{"node", "node server.js", false},
 		{"node", "node /path/to/codexfile/server.js", false},
 		{"vim", "vim claude.txt", false},

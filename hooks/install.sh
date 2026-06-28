@@ -133,15 +133,18 @@ merge_settings() {
 
 if [ "$PROVIDER" = "codex" ]; then
 	STRIP='
+  def strip_cmd($cmd):
+    map(.hooks |= map(select(.command != $cmd)))
+    | map(select((.hooks | length) > 0));
   .hooks //= {}
   | .hooks.SessionStart  //= []
   | .hooks.Stop          //= []
   | .hooks.SubagentStart //= []
   | .hooks.SubagentStop  //= []
-  | .hooks.SessionStart  |= map(select([.hooks[]?.command] | index($mark)  | not))
-  | .hooks.Stop          |= map(select([.hooks[]?.command] | index($unmark) | not))
-  | .hooks.SubagentStart |= map(select([.hooks[]?.command] | index($mark)  | not))
-  | .hooks.SubagentStop  |= map(select([.hooks[]?.command] | index($unmark) | not))
+  | .hooks.SessionStart  |= strip_cmd($mark)
+  | .hooks.Stop          |= strip_cmd($unmark)
+  | .hooks.SubagentStart |= strip_cmd($mark)
+  | .hooks.SubagentStop  |= strip_cmd($unmark)
 '
 	ADD='
   | .hooks.SessionStart  += [{matcher: "*", hooks: [{type: "command", command: $mark}]}]
@@ -151,11 +154,14 @@ if [ "$PROVIDER" = "codex" ]; then
 '
 else
 	STRIP='
+  def strip_cmd($cmd):
+    map(.hooks |= map(select(.command != $cmd)))
+    | map(select((.hooks | length) > 0));
   .hooks //= {}
   | .hooks.SubagentStart //= []
   | .hooks.SubagentStop  //= []
-  | .hooks.SubagentStart |= map(select([.hooks[]?.command] | index($mark)  | not))
-  | .hooks.SubagentStop  |= map(select([.hooks[]?.command] | index($unmark) | not))
+  | .hooks.SubagentStart |= strip_cmd($mark)
+  | .hooks.SubagentStop  |= strip_cmd($unmark)
 '
 	ADD='
   | .hooks.SubagentStart += [{matcher: "*", hooks: [{type: "command", command: $mark}]}]
