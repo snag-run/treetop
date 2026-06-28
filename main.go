@@ -34,6 +34,7 @@ const usage = `treetop - track git worktrees across projects
 
 Usage:
   treetop [flags] [pattern...]
+  treetop bug                  open a prefilled bug report (auto-fills your env)
 
   [pattern] is an optional regular expression matched against project names
   (case-insensitive). Pass several patterns, or use alternation, to match more
@@ -186,7 +187,18 @@ func parseFlags(args []string) (options, error) {
 }
 
 func main() {
-	opts, err := parseFlags(os.Args[1:])
+	args := os.Args[1:]
+	// `treetop bug` is a verb, not a flag: intercept it before flag parsing and
+	// open a prefilled bug report with the host environment auto-filled.
+	if len(args) > 0 && args[0] == "bug" {
+		if err := runBugReport(os.Stdin, os.Stdout, openBrowser); err != nil {
+			fmt.Fprintln(os.Stderr, "treetop:", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	opts, err := parseFlags(args)
 	if err != nil {
 		if err == flag.ErrHelp {
 			os.Exit(0)
