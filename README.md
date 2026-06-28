@@ -225,12 +225,12 @@ for ~15s, so in `--watch` the table keeps refreshing at its normal interval whil
 `treetop` decides a worktree is **in use** from two independent signals:
 
 1. **A live-session scan** (best-effort; Linux via `/proc`, macOS via
-   `ps`+`lsof`). It finds live `claude` processes and marks a worktree if the
-   process is working at or below it — either by its working directory, or by a
-   file it currently holds open. The open-file check is what lets `treetop` catch
-   **subagents**, which run in-process and never `chdir` into the worktree they
-   target. Because an open descriptor is transient, a worktree stays marked for
-   30s after the signal last appeared, so the `●` doesn't flicker.
+   `ps`+`lsof`). It finds live Claude Code and Codex processes and marks a
+   worktree if the process is working at or below it — either by its working
+   directory, or by a file it currently holds open. The open-file check is what
+   lets `treetop` catch **subagents**, which may not `chdir` into the worktree
+   they target. Because an open descriptor is transient, a worktree stays marked
+   for 30s after the signal last appeared, so the `●` doesn't flicker.
 2. **A `.treetop-inuse` marker file** at the worktree root. This is the
    deterministic, cross-platform signal: whatever drops the marker — not
    `treetop` — reports the activity. The marker's first line may be the owning
@@ -250,34 +250,42 @@ Known limits:
   `kill -9` or hard crash is untrappable, so it can leave your terminal on the
   alternate screen — run `reset` (or `tput rmcup`) to recover.
 
-### Marking agent (subagent) worktrees in use
+### Marking agent worktrees in use
 
-The included Claude Code hooks drop and remove the `.treetop-inuse` marker as
-subagents start and stop, so worktrees an agent is working in light up even
-though they leave no other footprint:
+The included hooks drop and remove the `.treetop-inuse` marker as agent sessions
+or subagents start and stop, so worktrees an agent is working in light up even
+when process scanning is unavailable or misses the activity:
 
 ```sh
-# Global: fires in every project (recommended for cross-project tracking)
+# Claude Code global install (default provider)
 hooks/install.sh --global
 
-# Repo: scoped to one repository, committable alongside it
+# Claude Code repo install, committable alongside the repo
 hooks/install.sh --repo .
 
-# Remove again (per scope)
-hooks/install.sh --global --uninstall
+# Codex global install
+hooks/install.sh --codex --global
+
+# Codex repo install, committable alongside the repo
+hooks/install.sh --codex --repo .
+
+# Remove again (same provider + scope)
+hooks/install.sh --codex --global --uninstall
 ```
 
-Claude Code **merges hooks from every scope**, so global and repo installs are
-independent and additive — pick one or run both. `--global` writes to
-`~/.claude/settings.json` and installs the scripts under `~/.claude/hooks/`;
-`--repo` writes to `<repo>/.claude/settings.json` and references the scripts via
-`$CLAUDE_PROJECT_DIR`, so committing `.claude/` shares them with everyone who
-clones the repo. The installer merges into existing settings (it never clobbers
-other hooks), is idempotent, and for `--global` also adds `.treetop-inuse` to
-your global gitignore so the marker doesn't litter your repos. Requires `jq`.
+Claude Code installs write to `~/.claude/settings.json` or
+`<repo>/.claude/settings.json` and install scripts under the matching
+`.claude/hooks/` directory. Codex installs write to `~/.codex/hooks.json` or
+`<repo>/.codex/hooks.json` and install scripts under the matching
+`.codex/hooks/` directory. The installer merges into existing settings (it never
+clobbers other hooks), is idempotent, and for `--global` can also add
+`.treetop-inuse` to your global gitignore so the marker doesn't litter your
+repos. Requires `jq`.
 
-The hooks key on `SubagentStart` / `SubagentStop`. If several subagents share one
-worktree, the first to stop clears the marker early — the live-session scan
+Claude Code hooks key on `SubagentStart` / `SubagentStop`. Codex hooks key on
+`SessionStart` / `Stop` and `SubagentStart` / `SubagentStop`; repo-local Codex
+hooks only run after Codex trusts the project config. If several subagents share
+one worktree, the first to stop clears the marker early — the live-session scan
 covers that gap.
 
 ## License

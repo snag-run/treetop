@@ -61,9 +61,9 @@ Flags:
   -h, --help             show this help
 
 In-use detection combines a best-effort session scan (Linux via /proc, macOS via
-ps+lsof: live claude sessions, including subagents via open files) with a
-.treetop-inuse marker file that any platform can drop. See the README for the
-subagent hooks.
+ps+lsof: live Claude Code and Codex sessions, including subagents via open
+files) with a .treetop-inuse marker file that any platform can drop. See the
+README for agent hooks.
 `
 
 type options struct {

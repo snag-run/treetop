@@ -79,8 +79,9 @@ func pidIsAgent(pid int) bool {
 	return isAgentProcess(strconv.Itoa(pid))
 }
 
-// isAgentProcess reports whether pid looks like a Claude Code session, reading
-// /proc/<pid>/comm for the name and /proc/<pid>/cmdline for node disambiguation.
+// isAgentProcess reports whether pid looks like a supported agent session,
+// reading /proc/<pid>/comm for the name and /proc/<pid>/cmdline for node
+// disambiguation.
 func isAgentProcess(pid string) bool {
 	base := filepath.Join("/proc", pid)
 

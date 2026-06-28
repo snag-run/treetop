@@ -9,18 +9,21 @@ import (
 
 func TestParsePSAgents(t *testing.T) {
 	// pid + full command line, as `ps -axww -o pid=,command=` emits it. Includes
-	// native `claude`, an npm node-launched claude, and noise that must not match
-	// (a node process unrelated to claude, a path that merely contains "claude").
+	// native agent binaries, npm node-launched agents, and noise that must not
+	// match (an unrelated node process, paths that merely contain agent names).
 	out := []byte(`  82450 claude
   83632 claude --resume
+  83633 codex --sandbox workspace-write
   90001 /Users/me/.nvm/versions/node/v22/bin/node /Users/me/.nvm/.../claude-code/cli.js
+  90005 /Users/me/.nvm/versions/node/v22/bin/node /Users/me/.nvm/.../@openai/codex/bin/codex.js
   90002 /usr/local/bin/node /Users/me/app/server.js
   90003 /usr/bin/vim /Users/me/claudefile.txt
+  90006 /usr/bin/vim /Users/me/codexfile.txt
   90004 /opt/homebrew/bin/treetop -w
 not-a-pid here
 `)
 	got := parsePSAgents(out)
-	want := []string{"82450", "83632", "90001"}
+	want := []string{"82450", "83632", "83633", "90001", "90005"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("parsePSAgents = %v, want %v", got, want)
 	}

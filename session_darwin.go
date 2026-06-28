@@ -10,7 +10,7 @@ import (
 )
 
 // scanSessions locates live agent sessions on macOS, where there is no /proc.
-// It finds candidate `claude` (or node-launched claude) processes with `ps`,
+// It finds candidate agent processes with `ps`,
 // then reads each one's working directory and the files it holds open with
 // `lsof`. If `ps` can't run at all, detection reports supported == false; with
 // `ps` available but no sessions, it reports supported with an empty scan.
@@ -71,10 +71,10 @@ func pidIsAgent(pid int) bool {
 
 // commandIsAgent reports whether a `ps` command column (a full argv) belongs to
 // an agent process, matching on the argv[0] base name or a node command line
-// mentioning claude. argv0 is taken as the command up to its first space, so an
-// executable whose own path contains a space could be misclassified — vanishingly
-// rare for the node/claude binaries this targets, and any miss is still covered
-// by the .treetop-inuse marker file.
+// mentioning a supported agent. argv0 is taken as the command up to its first
+// space, so an executable whose own path contains a space could be misclassified
+// — vanishingly rare for the binaries this targets, and any miss is still
+// covered by the .treetop-inuse marker file.
 func commandIsAgent(command string) bool {
 	command = strings.TrimSpace(command)
 	if command == "" {
@@ -89,7 +89,8 @@ func commandIsAgent(command string) bool {
 
 // parsePSAgents extracts the pids of agent processes from `ps -o pid=,command=`
 // output. Each line is "<pid> <command line>"; a process counts when commandIsAgent
-// matches its argv[0] base name (or a node command line mentioning claude).
+// matches its argv[0] base name (or a node command line mentioning a supported
+// agent).
 func parsePSAgents(out []byte) []string {
 	var pids []string
 	for _, line := range strings.Split(string(out), "\n") {
