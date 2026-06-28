@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"net/url"
 	"strings"
 	"testing"
@@ -129,8 +130,14 @@ func TestBuildIssueURLOmitsEmptyFields(t *testing.T) {
 	// form's required fields keep prompting the reporter.
 	got := buildIssueURL(bugEnv{Version: "v0.2.0"}, "")
 
-	_, query, _ := strings.Cut(got, "?")
-	q, _ := url.ParseQuery(query)
+	_, query, ok := strings.Cut(got, "?")
+	if !ok {
+		t.Fatalf("missing query string: %q", got)
+	}
+	q, err := url.ParseQuery(query)
+	if err != nil {
+		t.Fatalf("query did not parse: %v", err)
+	}
 	for _, k := range []string{"what-happened", "os", "os-version", "terminal"} {
 		if _, ok := q[k]; ok {
 			t.Errorf("query unexpectedly contains empty field %q", k)
@@ -138,5 +145,47 @@ func TestBuildIssueURLOmitsEmptyFields(t *testing.T) {
 	}
 	if q.Get("version") != "treetop v0.2.0" {
 		t.Errorf("version = %q, want %q", q.Get("version"), "treetop v0.2.0")
+	}
+}
+
+var errBugReportTest = errors.New("bug report test error")
+
+type errReader struct{}
+
+func (errReader) Read([]byte) (int, error) {
+	return 0, errBugReportTest
+}
+
+type errWriter struct{}
+
+func (errWriter) Write([]byte) (int, error) {
+	return 0, errBugReportTest
+}
+
+func TestRunBugReportReturnsInputError(t *testing.T) {
+	openerCalled := false
+	err := runBugReport(errReader{}, &strings.Builder{}, func(string) error {
+		openerCalled = true
+		return nil
+	})
+	if !errors.Is(err, errBugReportTest) {
+		t.Fatalf("runBugReport() error = %v, want %v", err, errBugReportTest)
+	}
+	if openerCalled {
+		t.Fatal("opener was called after input error")
+	}
+}
+
+func TestRunBugReportReturnsOutputError(t *testing.T) {
+	openerCalled := false
+	err := runBugReport(strings.NewReader("description\n"), errWriter{}, func(string) error {
+		openerCalled = true
+		return nil
+	})
+	if !errors.Is(err, errBugReportTest) {
+		t.Fatalf("runBugReport() error = %v, want %v", err, errBugReportTest)
+	}
+	if openerCalled {
+		t.Fatal("opener was called after output error")
 	}
 }

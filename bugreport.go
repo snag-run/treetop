@@ -50,7 +50,7 @@ func osName(goos string) string {
 
 // osVersion best-effort detects the OS version string. On Linux it reads the
 // distro's PRETTY_NAME (e.g. "Ubuntu 24.04 LTS"); on macOS it shells out to
-// sw_vers for the product version (e.g. "14.5"). Returns "" if undetectable —
+// sw_vers for the product version (e.g. "14.5"). Returns "" if undetectable -
 // the reporter fills it in via the editable form field.
 func osVersion() string {
 	switch runtime.GOOS {
@@ -124,8 +124,8 @@ func buildIssueURL(env bugEnv, description string) string {
 	return repoURL + "/issues/new?" + q.Encode()
 }
 
-// openBrowser opens url in the host's default browser without blocking. It's the
-// production opener passed to runBugReport.
+// openBrowser opens url in the host's default browser. It's the production
+// opener passed to runBugReport.
 func openBrowser(target string) error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
@@ -134,7 +134,45 @@ func openBrowser(target string) error {
 	default:
 		cmd = exec.Command("xdg-open", target)
 	}
-	return cmd.Start()
+	return cmd.Run()
+}
+
+func writeBugReportIntro(stdout io.Writer, env bugEnv) error {
+	if _, err := fmt.Fprintln(stdout, "Filing a treetop bug report. Detected environment:"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(stdout, "  treetop:  %s\n", env.Version); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(stdout, "  OS:       %s\n", strings.TrimSpace(env.OS+" "+env.OSVersion)); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(stdout, "  terminal: %s\n", env.Terminal); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(stdout); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprint(stdout, "Briefly describe the bug (Enter to skip and write it in the browser): "); err != nil {
+		return err
+	}
+	return nil
+}
+
+func writeBugReportURL(stdout io.Writer, target string) error {
+	if _, err := fmt.Fprintln(stdout); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(stdout, "Opening a prefilled bug report in your browser. Review and submit it there."); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(stdout, "If it doesn't open, copy this URL:"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(stdout, "  "+target); err != nil {
+		return err
+	}
+	return nil
 }
 
 // runBugReport drives the `treetop bug` flow: show the detected environment,
@@ -142,28 +180,29 @@ func openBrowser(target string) error {
 // URL. opener may be nil to skip the browser launch (the URL is still printed).
 func runBugReport(stdin io.Reader, stdout io.Writer, opener func(string) error) error {
 	env := collectBugEnv()
+	if err := writeBugReportIntro(stdout, env); err != nil {
+		return err
+	}
 
-	fmt.Fprintln(stdout, "Filing a treetop bug report. Detected environment:")
-	fmt.Fprintf(stdout, "  treetop:  %s\n", env.Version)
-	fmt.Fprintf(stdout, "  OS:       %s\n", strings.TrimSpace(env.OS+" "+env.OSVersion))
-	fmt.Fprintf(stdout, "  terminal: %s\n", env.Terminal)
-	fmt.Fprintln(stdout)
-
-	fmt.Fprint(stdout, "Briefly describe the bug (Enter to skip and write it in the browser): ")
 	description := ""
-	if sc := bufio.NewScanner(stdin); sc.Scan() {
+	sc := bufio.NewScanner(stdin)
+	if sc.Scan() {
 		description = strings.TrimSpace(sc.Text())
+	}
+	if err := sc.Err(); err != nil {
+		return err
 	}
 
 	target := buildIssueURL(env, description)
-	fmt.Fprintln(stdout)
-	fmt.Fprintln(stdout, "Opening a prefilled bug report in your browser. Review and submit it there.")
-	fmt.Fprintln(stdout, "If it doesn't open, copy this URL:")
-	fmt.Fprintln(stdout, "  "+target)
+	if err := writeBugReportURL(stdout, target); err != nil {
+		return err
+	}
 
 	if opener != nil {
 		if err := opener(target); err != nil {
-			fmt.Fprintln(stdout, "\n(couldn't launch a browser automatically — use the URL above)")
+			if _, writeErr := fmt.Fprintln(stdout, "\n(couldn't launch a browser automatically - use the URL above)"); writeErr != nil {
+				return writeErr
+			}
 		}
 	}
 	return nil
