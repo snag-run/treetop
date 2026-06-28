@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.0](https://github.com/snag-run/treetop/compare/v0.3.0...v0.4.0) (2026-06-28)
+
+
+### Features
+
+* add 'treetop bug' to open a prefilled bug report ([#77](https://github.com/snag-run/treetop/issues/77)) ([c35f0c1](https://github.com/snag-run/treetop/commit/c35f0c1616f57b0a3cd07c0db51cd6afbf04b639))
+* add Codex support for in-use detection ([#81](https://github.com/snag-run/treetop/issues/81)) ([7a2b7f4](https://github.com/snag-run/treetop/commit/7a2b7f451e8460e47267e65b22c6b8f92c5f984e))
+
+
+### Bug Fixes
+
+* restore ghostty link clicks in watch mode ([#82](https://github.com/snag-run/treetop/issues/82)) ([3e53888](https://github.com/snag-run/treetop/commit/3e538886baa8dca538f71b855ce82cc8fd6de1c4))
+
 ## [0.3.0](https://github.com/snag-run/treetop/compare/v0.2.0...v0.3.0) (2026-06-27)
 
 
