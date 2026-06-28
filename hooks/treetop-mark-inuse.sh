@@ -28,6 +28,29 @@ extract_cwd() {
 	printf '%s' "$json" | grep -o '"cwd"[[:space:]]*:[[:space:]]*"[^"]*"' | head -n1 | sed 's/.*"cwd"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/'
 }
 
+node_agent_cmdline() {
+	local cmdline="$1" token norm base parent
+	for token in $cmdline; do
+		norm=${token//\\//}
+		norm=$(printf '%s' "$norm" | tr -d "\"'")
+		norm=${norm,,}
+		case "$norm" in
+		*claude-code*|*@anthropic-ai/claude-code*|*@openai/codex*) return 0 ;;
+		esac
+		base=${norm##*/}
+		case "$base" in
+		claude|claude.js|claude.cmd|codex|codex.js|codex.cmd) return 0 ;;
+		cli.js)
+			parent=${norm%/*}
+			case "${parent##*/}" in
+			claude|claude-code|codex) return 0 ;;
+			esac
+			;;
+		esac
+	done
+	return 1
+}
+
 # agent_pid walks the parent-process chain to find the long-lived agent
 # session that spawned this hook, so the marker outlives a single subagent but
 # not the session. Uses /proc on Linux and `ps` on macOS/other Unix; empty if no
@@ -53,7 +76,7 @@ agent_pid_proc() {
 			printf '%s' "$pid"
 			return 0
 		fi
-		if [ "$comm" = "node" ] && tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null | grep -Eqi "claude|@openai/codex|/codex/"; then
+		if [ "$comm" = "node" ] && node_agent_cmdline "$(tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null)"; then
 			printf '%s' "$pid"
 			return 0
 		fi
@@ -80,7 +103,7 @@ agent_pid_ps() {
 			return 0
 			;;
 		node)
-			if ps -o command= -p "$pid" 2>/dev/null | grep -Eqi "claude|@openai/codex|/codex/"; then
+			if node_agent_cmdline "$(ps -o command= -p "$pid" 2>/dev/null)"; then
 				printf '%s' "$pid"
 				return 0
 			fi
