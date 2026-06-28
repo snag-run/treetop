@@ -89,11 +89,18 @@ func runWatch(opts options) {
 	}
 
 	out := bufio.NewWriter(os.Stdout)
-	fmt.Fprint(out, altScreenOn+cursorHide+mouseOn)
+	mouseReporting := watchMouseReporting(opts)
+	fmt.Fprint(out, altScreenOn+cursorHide)
+	if mouseReporting {
+		fmt.Fprint(out, mouseOn)
+	}
 	out.Flush()
 
 	cleanup := func() {
-		fmt.Fprint(out, mouseOff+cursorShow+altScreenOff)
+		if mouseReporting {
+			fmt.Fprint(out, mouseOff)
+		}
+		fmt.Fprint(out, cursorShow+altScreenOff)
 		out.Flush()
 		term.Restore(inFd, oldState)
 	}
@@ -335,6 +342,14 @@ func runWatch(opts options) {
 			render()
 		}
 	}
+}
+
+// watchMouseReporting reports whether watch mode should ask the terminal to
+// send mouse events to treetop. Mouse reporting makes wheel scrolling work, but
+// it also captures clicks that terminals such as Ghostty need for OSC 8 link
+// activation, so PR/check link views leave mouse handling to the terminal.
+func watchMouseReporting(opts options) bool {
+	return !opts.pr && !opts.checks
 }
 
 // refreshLoop collects data on the configured interval and delivers the latest

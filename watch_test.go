@@ -101,6 +101,26 @@ func TestTrimLastRune(t *testing.T) {
 	}
 }
 
+func TestWatchMouseReporting(t *testing.T) {
+	cases := []struct {
+		name string
+		opts options
+		want bool
+	}{
+		{name: "plain watch", opts: options{}, want: true},
+		{name: "PR links", opts: options{pr: true}, want: false},
+		{name: "check links", opts: options{checks: true}, want: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := watchMouseReporting(tc.opts); got != tc.want {
+				t.Errorf("watchMouseReporting() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestWatchFooterFilterMode(t *testing.T) {
 	r := newRenderer(nil, false, false, false)
 
