@@ -1,0 +1,94 @@
+name: Bug report
+description: Report something treetop does wrong
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug! A few details up front make it much faster to
+        track down — most treetop bugs come down to the OS, the terminal, or the
+        exact flags used, so please fill those in.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did treetop do, and what did you expect it to do instead?
+      placeholder: |
+        Ran treetop and the PR column was blank for every project, but
+        `gh pr list` shows open PRs.
+    validations:
+      required: true
+
+  - type: input
+    id: command
+    attributes:
+      label: Command you ran
+      description: The exact treetop invocation, including any flags.
+      placeholder: treetop --root ~/dev --pr
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: treetop version
+      description: Output of `treetop --version`.
+      placeholder: treetop v0.2.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Linux
+        - macOS
+        - Other (note it below)
+    validations:
+      required: true
+
+  - type: input
+    id: os-version
+    attributes:
+      label: OS version
+      description: e.g. Ubuntu 24.04, Fedora 40, macOS 14.5.
+      placeholder: Ubuntu 24.04
+    validations:
+      required: true
+
+  - type: input
+    id: terminal
+    attributes:
+      label: Terminal emulator and version
+      description: >
+        e.g. Ghostty 1.0, iTerm2 3.5, GNOME Terminal (VTE 0.76), Alacritty 0.13.
+        Matters for clickable links, colors, and watch-mode rendering.
+      placeholder: Ghostty 1.0.0
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: >
+        How to trigger it. For discovery or filtering bugs, sketch your folder
+        layout (e.g. projects live under ~/dev/<project>) and the depth/root used.
+      placeholder: |
+        1. Projects live at ~/dev/<project>
+        2. Run `treetop --root ~/dev`
+        3. Project "api" is missing from the list
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else?
+      description: >
+        Screenshots, terminal output, or anything else that helps. Paste output
+        in a ``` code block ``` to keep formatting.
+    validations:
+      required: false
