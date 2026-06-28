@@ -1,6 +1,7 @@
 package main
 
 import (
+	"path"
 	"path/filepath"
 	"strings"
 )
@@ -43,11 +44,34 @@ func agentName(comm, cmdline string) bool {
 }
 
 func nodeAgentCommandLine(cmdline string) bool {
-	lower := strings.ToLower(cmdline)
-	return strings.Contains(lower, "claude") ||
-		strings.Contains(lower, "@openai/codex") ||
-		strings.Contains(lower, "/codex/") ||
-		strings.Contains(lower, `\codex\`)
+	for _, token := range strings.Fields(strings.ToLower(cmdline)) {
+		if nodeAgentToken(token) {
+			return true
+		}
+	}
+	return false
+}
+
+func nodeAgentToken(token string) bool {
+	token = strings.Trim(token, `"'`)
+	token = strings.ReplaceAll(token, `\`, `/`)
+	if strings.Contains(token, "claude-code") || strings.Contains(token, "@anthropic-ai/claude-code") {
+		return true
+	}
+	if strings.Contains(token, "@openai/codex") {
+		return true
+	}
+
+	base := path.Base(token)
+	switch base {
+	case "claude", "claude.js", "claude.cmd", "codex", "codex.js", "codex.cmd":
+		return true
+	case "cli.js":
+		parent := path.Base(path.Dir(token))
+		return parent == "claude" || parent == "claude-code" || parent == "codex"
+	default:
+		return false
+	}
 }
 
 // markInUse flags every worktree that has a live session at or below its path.

@@ -15,7 +15,7 @@ fmt:
 	gofmt -w .
 
 fmt-check:
-	gofmt -l .
+	@files="$$(gofmt -l .)"; [ -z "$$files" ] || { printf '%s\n' "$$files"; exit 1; }
 
 install:
 	$(GO) install .

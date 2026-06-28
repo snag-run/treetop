@@ -236,7 +236,7 @@ echo "  settings: $SETTINGS"
 echo "  scripts:  $HOOKS_DIR/treetop-{mark,unmark}-inuse.sh"
 [ "$BACKED_UP" = 1 ] && echo "  (backup of prior settings at $SETTINGS.bak)"
 if [ "$SCOPE" = "repo" ]; then
-	echo "  commit ${BASE#$root/}/ to share with the repo."
+	echo "  commit ${BASE#"$root"/}/ to share with the repo."
 	if [ "$PROVIDER" = "codex" ]; then
 		echo "  Codex runs repo-local hooks only after the project config is trusted."
 	fi
