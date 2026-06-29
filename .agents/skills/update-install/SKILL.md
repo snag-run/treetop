@@ -28,7 +28,10 @@ release, download the prebuilt binary from the GitHub release instead.
 
    ```sh
    BIN_DIR="$(go env GOBIN)"
-   [ -n "$BIN_DIR" ] || BIN_DIR="$(go env GOPATH)/bin"
+   if [ -z "$BIN_DIR" ]; then
+     GOPATH="$(go env GOPATH)"
+     BIN_DIR="${GOPATH%%:*}/bin"
+   fi
    TARGET="$BIN_DIR/treetop"
    ```
 
@@ -60,8 +63,8 @@ release, download the prebuilt binary from the GitHub release instead.
 
 - `make install` uses Go's install location, not `/usr/local/bin`.
 - If `GOBIN` is set, the binary lands in `$GOBIN/treetop`.
-- Otherwise it lands in `$(go env GOPATH)/bin/treetop`, which is typically
-  `$HOME/go/bin/treetop`.
+- Otherwise it lands in the `bin` directory under the first path entry from
+  `go env GOPATH`, which is typically `$HOME/go/bin/treetop`.
 - If that directory is not on `PATH`, the install can succeed while `treetop`
   still resolves to an older copy elsewhere.
 - The version string comes from Go build info (`main.go`): a plain `go build`
