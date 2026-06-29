@@ -52,6 +52,9 @@ Flags:
                          only polls when the list is filtered, max 5 projects)
   --checks               expand --pr into one row per CI check under each
                          worktree (implies --pr; full view only)
+  --notify               with --watch, raise a desktop notification when a PR is
+                         approved or sent back for changes, or CI fails (implies
+                         --pr; same polling/gating; needs an OSC 9 terminal)
   --in-use               show only worktrees with a live session (in use)
   --open                 show only worktrees without a session (open)
   --root DIR             directory to scan for repos (repeatable; default: $HOME)
@@ -75,6 +78,7 @@ type options struct {
 	projectsOnly bool
 	pr           bool
 	checks       bool
+	notify       bool
 	roots        []string
 	depth        int
 	color        bool
@@ -105,6 +109,7 @@ func parseFlags(args []string) (options, error) {
 		projectsOnly bool
 		pr           bool
 		checks       bool
+		notify       bool
 		noColor      bool
 		showVersion  bool
 		roots        stringSlice
@@ -123,6 +128,7 @@ func parseFlags(args []string) (options, error) {
 	fs.BoolVar(&projectsOnly, "p", false, "")
 	fs.BoolVar(&pr, "pr", false, "")
 	fs.BoolVar(&checks, "checks", false, "")
+	fs.BoolVar(&notify, "notify", false, "")
 	fs.BoolVar(&noColor, "no-color", false, "")
 	fs.BoolVar(&showVersion, "version", false, "")
 	fs.BoolVar(&showVersion, "V", false, "")
@@ -141,6 +147,12 @@ func parseFlags(args []string) (options, error) {
 	// --checks expands the PR column into per-check rows, so it implies --pr: the
 	// same polling/gating, plus the rollup glyph each row hangs beneath.
 	if checks {
+		pr = true
+	}
+	// --notify watches the same PR data for state changes, so it too implies --pr
+	// (and rides its filter-gated polling). Notifications are raised only in watch
+	// mode; outside it, --notify just behaves like --pr.
+	if notify {
 		pr = true
 	}
 	if interval < 1 {
@@ -180,6 +192,7 @@ func parseFlags(args []string) (options, error) {
 		projectsOnly: projectsOnly,
 		pr:           pr,
 		checks:       checks,
+		notify:       notify,
 		roots:        roots,
 		depth:        depth,
 		color:        !noColor && useColor(),

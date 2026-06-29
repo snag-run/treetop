@@ -69,7 +69,8 @@ type snapshot struct {
 	projects  []Project
 	supported bool
 	err       error
-	startedAt time.Time // when this refresh's collection began, for the staleness age
+	startedAt time.Time      // when this refresh's collection began, for the staleness age
+	notes     []notification // desktop notifications to raise this frame (--notify)
 }
 
 // runWatch renders a continuously-refreshing, scrollable dashboard until the
@@ -315,6 +316,9 @@ func runWatch(opts options) {
 		case cur = <-snaps:
 			loading = false
 			lastUpdate = cur.startedAt
+			// Raise notifications here, on the main loop that owns out, so the
+			// escape-sequence writes never race the refresh goroutine.
+			raiseNotifications(out, cur.notes)
 			render()
 		case <-ui.C:
 			render()
@@ -378,6 +382,10 @@ func refreshLoop(opts options, queries <-chan string, out chan snapshot, done <-
 
 	// One tracker for the session, so in-use decay carries across refreshes.
 	tr := newTracker(inUseDecay)
+	// One notifier for the session, so the per-worktree baseline (and so
+	// first-observation suppression) carries across refreshes. A no-op unless
+	// --notify is set.
+	nf := newNotifier(opts.notify)
 	query := ""
 
 	emit := func() {
@@ -390,9 +398,15 @@ func refreshLoop(opts options, queries <-chan string, out chan snapshot, done <-
 		// running longer than the interval) still ages past the threshold.
 		started := time.Now()
 		projects, _, supported, cerr := collect(opts, tr, live)
-		s := snapshot{projects: projects, supported: supported, err: cerr, startedAt: started}
+		s := snapshot{projects: projects, supported: supported, err: cerr, startedAt: started, notes: nf.diff(projects)}
 		select { // drop a stale pending snapshot, then deliver the fresh one
-		case <-out:
+		case old := <-out:
+			// Carry forward the dropped frame's notifications. nf.diff already
+			// advanced the per-worktree baseline past their transition, so a
+			// dropped note is lost for good (never re-detected) — prepend it to
+			// the fresh frame instead. Two emits can outrun one consume when a
+			// ticker tick and a filter-query change land close together.
+			s.notes = append(old.notes, s.notes...)
 		default:
 		}
 		select {
