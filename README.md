@@ -155,7 +155,7 @@ never descended into, so the cost of a deeper scan is just the directory stats).
 If you find yourself retyping the same flags (`treetop -w --pr --checks`), set
 them once in a config file. `treetop` reads JSON from
 `$XDG_CONFIG_HOME/treetop/config.json`, falling back to
-`~/.config/treetop/config.json` when `$XDG_CONFIG_HOME` is unset.
+`~/.config/treetop/config.json` when `$XDG_CONFIG_HOME` is unset or empty.
 
 ```json
 {
