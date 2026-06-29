@@ -180,6 +180,15 @@ the built-in default). The same implications apply — `"checks"` or `"notify"`
 turn on `"pr"`. A missing file is fine; a malformed one warns to stderr and
 falls back to the built-in defaults rather than failing.
 
+To find or inspect your settings without hunting for the path or schema:
+
+- `treetop config path` — print the resolved config file path (even if it
+  doesn't exist yet).
+- `treetop config show` — print the path, then each key's effective value
+  (built-in default overlaid by the file), before any CLI flag. `color` shows
+  the stored preference, not the TTY-resolved value. Bare `treetop config` is
+  the same as `treetop config show`.
+
 ## PR check status (`--pr`)
 
 With `--pr`, each worktree gets a glyph for the rolled-up CI status of the open
