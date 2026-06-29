@@ -5,14 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 )
-
-// notifyCooldown suppresses a repeat of the same (worktree, event) notification
-// within this window. Transitions are already edge-triggered, so this only bites
-// when a state is left and re-entered in quick succession — a flapping check or a
-// re-requested review — which would otherwise ping more than once.
-const notifyCooldown = 5 * time.Minute
 
 // notification is a single desktop notification to surface: a body identifying
 // the worktree and what changed (e.g. "snag/feat-x — changes requested").
@@ -40,16 +33,12 @@ type notifyState struct {
 type notifier struct {
 	enabled bool
 	seen    map[string]notifyState // by worktree path
-	lastAt  map[string]time.Time   // "path|event" -> last notified, for cooldown
-	now     func() time.Time       // injectable for tests
 }
 
 func newNotifier(enabled bool) *notifier {
 	return &notifier{
 		enabled: enabled,
 		seen:    map[string]notifyState{},
-		lastAt:  map[string]time.Time{},
-		now:     time.Now,
 	}
 }
 
@@ -88,16 +77,18 @@ func (n *notifier) diff(projects []Project) []notification {
 			if cur.review != prev.review {
 				switch cur.review {
 				case ReviewApproved:
-					out = n.fire(out, p.Name, w, "review:approved", "approved")
+					out = fire(out, p.Name, w, "approved")
 				case ReviewChangesRequested:
-					out = n.fire(out, p.Name, w, "review:changes", "changes requested")
+					out = fire(out, p.Name, w, "changes requested")
 				}
 			}
 			// CI: rollup-keyed and settle-gated, so this is one ping per run when
 			// the rollup lands on a terminal failure — never per check, never the
-			// early flake while other checks are still running.
+			// early flake while other checks are still running. A re-pushed run
+			// that fails again is a fresh other→failed transition, so it notifies
+			// again — which is intended (it's a new run, not a duplicate).
 			if cur.ciFailed && !prev.ciFailed {
-				out = n.fire(out, p.Name, w, "ci:failed", "CI failed")
+				out = fire(out, p.Name, w, "CI failed")
 			}
 		}
 	}
@@ -105,15 +96,13 @@ func (n *notifier) diff(projects []Project) []notification {
 	return out
 }
 
-// fire appends a notification unless an identical one (same worktree, same
-// event) fired within notifyCooldown — the backstop against flapping.
-func (n *notifier) fire(out []notification, project string, w Worktree, event, what string) []notification {
-	key := w.Path + "|" + event
-	now := n.now()
-	if t, ok := n.lastAt[key]; ok && now.Sub(t) < notifyCooldown {
-		return out
-	}
-	n.lastAt[key] = now
+// fire appends a notification for a worktree transition. No de-duplication is
+// needed here: diff only calls it on an actual state change (edge-triggered), and
+// CI is settle-gated so a single failing run yields exactly one other→failed
+// transition. Repeats therefore only happen across genuinely distinct events — a
+// re-pushed run, a re-requested review, a branch switch — all of which should
+// notify again.
+func fire(out []notification, project string, w Worktree, what string) []notification {
 	return append(out, notification{body: notifyBody(project, w, what)})
 }
 
@@ -131,18 +120,11 @@ func notifyBody(project string, w Worktree, what string) string {
 }
 
 // sweep forgets worktrees no longer in view so a later reappearance re-baselines
-// (silently) and the maps don't grow across a long session. Cooldown entries are
-// dropped once older than the window — by then they no longer suppress anything.
+// (silently) and the map doesn't grow across a long session.
 func (n *notifier) sweep(present map[string]bool) {
 	for path := range n.seen {
 		if !present[path] {
 			delete(n.seen, path)
-		}
-	}
-	now := n.now()
-	for key, t := range n.lastAt {
-		if now.Sub(t) >= notifyCooldown {
-			delete(n.lastAt, key)
 		}
 	}
 }
@@ -169,7 +151,9 @@ func ciSettledFailure(w Worktree) bool {
 // (in render) pushes these out; an empty slice is a no-op.
 func raiseNotifications(out *bufio.Writer, notes []notification) {
 	for _, nt := range notes {
-		fmt.Fprint(out, osc9(nt.body))
+		// Best-effort: the buffered write surfaces any error at the frame's
+		// flush in render, so discard it here.
+		_, _ = fmt.Fprint(out, osc9(nt.body))
 	}
 }
 

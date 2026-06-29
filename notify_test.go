@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"strings"
 	"testing"
-	"time"
 )
 
 // wt builds a worktree with an open PR for the notifier tests.
@@ -119,29 +118,37 @@ func TestCISettleGating(t *testing.T) {
 	}
 }
 
-func TestCooldownSuppressesFlap(t *testing.T) {
+func TestRepushedFailureRenotifies(t *testing.T) {
 	n := newNotifier(true)
-	now := time.Now()
-	n.now = func() time.Time { return now }
-
-	other := proj("snag", wt("/a", "feat", ReviewNone, StateSuccess))
 	failed := proj("snag", wt("/a", "feat", ReviewNone, StateFailure, Check{Name: "test", State: StateFailure}))
+	// A re-push: the rollup goes back to pending (not a settled failure), so the
+	// CI axis leaves "failed" and can transition into it again.
+	rerun := proj("snag", wt("/a", "feat", ReviewNone, StatePending, Check{Name: "test", State: StatePending}))
 
-	n.diff(other)                             // baseline
-	if got := n.diff(failed); len(got) != 1 { // first failure fires
+	n.diff(proj("snag", wt("/a", "feat", ReviewNone, StateSuccess))) // baseline: green
+	if got := n.diff(failed); len(got) != 1 {
 		t.Fatalf("first failure: got %v, want 1", bodies(got))
 	}
-	n.diff(other) // back to green: clears the failed baseline
-
-	now = now.Add(1 * time.Minute) // within cooldown
-	if got := n.diff(failed); len(got) != 0 {
-		t.Fatalf("flap within cooldown notified %v", bodies(got))
-	}
-	n.diff(other)
-
-	now = now.Add(5 * time.Minute) // past cooldown
+	n.diff(rerun) // re-push kicks off a new run
+	// The new run failing is a genuine other→failed transition: it must notify
+	// again, immediately (no cooldown suppressing a legitimately distinct run).
 	if got := n.diff(failed); len(got) != 1 {
-		t.Fatalf("failure past cooldown: got %v, want 1", bodies(got))
+		t.Fatalf("re-pushed failure: got %v, want 1 (must re-notify)", bodies(got))
+	}
+}
+
+func TestBranchSwitchFailureNotSuppressed(t *testing.T) {
+	n := newNotifier(true)
+	// /a fails on feat, then the same worktree switches to feat2 and that fails
+	// too: distinct PRs, so the second failure must notify (a path-only suppressor
+	// would have swallowed it).
+	n.diff(proj("snag", wt("/a", "feat", ReviewNone, StateSuccess)))
+	n.diff(proj("snag", wt("/a", "feat", ReviewNone, StateFailure, Check{Name: "t", State: StateFailure})))
+	// New branch, first observation is silent...
+	n.diff(proj("snag", wt("/a", "feat2", ReviewNone, StateSuccess)))
+	got := n.diff(proj("snag", wt("/a", "feat2", ReviewNone, StateFailure, Check{Name: "t", State: StateFailure})))
+	if want := []string{"snag/feat2 — CI failed"}; !equalStrings(bodies(got), want) {
+		t.Fatalf("got %v, want %v", bodies(got), want)
 	}
 }
 

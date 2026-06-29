@@ -235,9 +235,10 @@ ping only when something crosses a meaningful boundary:
 CI notifies on the **rolled-up** status, not individual checks (one PR with a
 dozen checks is one signal, not a dozen), and only once the run has **settled**
 to a failure — so you don't get pinged the instant the first check goes red while
-the rest are still running. A re-pushed branch that fails again is a new run and
-pings again; a brief flap is swallowed by a short per-event cooldown. The state
-you're already in when treetop launches never fires — only changes after that do.
+the rest are still running. Because a notification only fires on a real *change*
+into one of these states, a steady red PR never re-pings — but a re-pushed branch
+whose new run fails is a genuinely fresh failure and pings again. The state you're
+already in when treetop launches never fires — only changes after that do.
 
 `--notify` implies `--pr`, so the same `gh` polling and filter gating apply: it
 notifies only for the worktrees actually being polled (a filtered list, max 5
