@@ -128,6 +128,7 @@ $ treetop -p
 | `-p`, `--projects` | Collapse to one line per project (no worktrees) |
 | `--pr` | Show a PR check-status glyph per worktree (needs `gh`; polls only when filtered, max 5 projects) |
 | `--checks` | Expand `--pr` into one row per CI check under each worktree (implies `--pr`) |
+| `--notify` | With `--watch`, raise a desktop notification when a PR is approved or sent back for changes, or CI fails (implies `--pr`) |
 | `--in-use` | Show only worktrees with a live session |
 | `--open` | Show only worktrees with no session |
 | `--root DIR` | Directory to scan for repos (repeatable; default `$HOME`) |
@@ -219,6 +220,32 @@ box, `--in-use`, or `--open`); an unfiltered `$HOME` scan would otherwise fire a
 are polled per refresh (the header says when more matched). Results are cached
 for ~15s, so in `--watch` the table keeps refreshing at its normal interval while
 `gh` is hit only occasionally.
+
+### Desktop notifications (`--notify`)
+
+Watch mode is passive — you have to be looking at it to catch a PR get "changes
+requested" or CI go red. `--notify` (with `--watch`) pushes the events that
+actually need a human as desktop notifications, so treetop can sit in a pane and
+ping only when something crosses a meaningful boundary:
+
+- a PR is **approved**,
+- a PR is sent back for **changes**, or
+- its **CI fails**.
+
+CI notifies on the **rolled-up** status, not individual checks (one PR with a
+dozen checks is one signal, not a dozen), and only once the run has **settled**
+to a failure — so you don't get pinged the instant the first check goes red while
+the rest are still running. A re-pushed branch that fails again is a new run and
+pings again; a brief flap is swallowed by a short per-event cooldown. The state
+you're already in when treetop launches never fires — only changes after that do.
+
+`--notify` implies `--pr`, so the same `gh` polling and filter gating apply: it
+notifies only for the worktrees actually being polled (a filtered list, max 5
+projects). Notifications are delivered as `OSC 9` escape sequences, which
+terminals such as **Ghostty**, iTerm2, WezTerm, and kitty render as real system
+notifications (inside `tmux` they're wrapped for passthrough, which needs
+`set -g allow-passthrough on`). Terminals without `OSC 9` support simply show
+nothing.
 
 ## How in-use detection works (and its limits)
 
