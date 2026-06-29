@@ -189,3 +189,20 @@ func TestConfigPathFallsBackToHomeConfig(t *testing.T) {
 		t.Errorf("configPath = %q, want %q", got, want)
 	}
 }
+
+func TestExplicitFalseFlagOverridesConfigTrue(t *testing.T) {
+	// Config is a floor: an explicitly-false boolean flag must override a config
+	// value that turns it on. This is the only way to disable a config-enabled
+	// boolean for a single run (until --no-* flags land, issue #94), so pin it.
+	path := writeConfig(t, `{"pr":true,"watch":true}`)
+	opts, err := parseFlagsWithConfig([]string{"--root", "/some/dir", "--pr=false", "-w=false"}, path)
+	if err != nil {
+		t.Fatalf("parseFlagsWithConfig: %v", err)
+	}
+	if opts.pr {
+		t.Error("pr: --pr=false did not override config pr:true")
+	}
+	if opts.watch {
+		t.Error("watch: -w=false did not override config watch:true")
+	}
+}

@@ -180,6 +180,10 @@ the built-in default). The same implications apply — `"checks"` or `"notify"`
 turn on `"pr"`. A missing file is fine; a malformed one warns to stderr and
 falls back to the built-in defaults rather than failing.
 
+To **disable** a boolean your config turns on, pass it explicitly false for the
+run — e.g. `treetop --pr=false` (or `-w=false`) overrides a config `"pr": true`.
+(There's no `--no-pr` yet — that's [tracked separately](https://github.com/snag-run/treetop/issues/94).)
+
 To find or inspect your settings without hunting for the path or schema:
 
 - `treetop config path` — print the resolved config file path (even if it
