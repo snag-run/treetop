@@ -192,17 +192,47 @@ func TestConfigPathFallsBackToHomeConfig(t *testing.T) {
 
 func TestExplicitFalseFlagOverridesConfigTrue(t *testing.T) {
 	// Config is a floor: an explicitly-false boolean flag must override a config
-	// value that turns it on. This is the only way to disable a config-enabled
-	// boolean for a single run (until --no-* flags land, issue #94), so pin it.
-	path := writeConfig(t, `{"pr":true,"watch":true}`)
-	opts, err := parseFlagsWithConfig([]string{"--root", "/some/dir", "--pr=false", "-w=false"}, path)
+	// value that turns it on — for every config-backed boolean that has a positive
+	// flag. This is the only way to disable a config-enabled boolean for a single
+	// run (until --no-* flags land, #94), so pin the whole set.
+	//
+	// color is the exception (no positive flag, only --no-color) — its override
+	// path is covered by TestApplyConfigColorMapsToNoColor.
+	path := writeConfig(t, `{"watch":true,"pr":true,"checks":true,"notify":true,"projects":true}`)
+	opts, err := parseFlagsWithConfig(
+		[]string{"--root", "/some/dir", "-w=false", "--pr=false", "--checks=false", "--notify=false", "-p=false"},
+		path,
+	)
 	if err != nil {
 		t.Fatalf("parseFlagsWithConfig: %v", err)
 	}
-	if opts.pr {
-		t.Error("pr: --pr=false did not override config pr:true")
+	for _, c := range []struct {
+		name string
+		on   bool
+	}{
+		{"watch", opts.watch},
+		{"pr", opts.pr},
+		{"checks", opts.checks},
+		{"notify", opts.notify},
+		{"projects", opts.projectsOnly},
+	} {
+		if c.on {
+			t.Errorf("%s: explicit --%s=false did not override config true", c.name, c.name)
+		}
 	}
-	if opts.watch {
-		t.Error("watch: -w=false did not override config watch:true")
+}
+
+func TestChecksImplicationOutranksExplicitFalsePR(t *testing.T) {
+	// Contract: --checks/--notify imply --pr, and that runs after the merge, so a
+	// config (or flag) that turns checks on forces pr on even against --pr=false.
+	// To run without pr you must also drop checks. Documented so it's not mistaken
+	// for the override being broken.
+	path := writeConfig(t, `{"checks":true}`)
+	opts, err := parseFlagsWithConfig([]string{"--root", "/some/dir", "--pr=false"}, path)
+	if err != nil {
+		t.Fatalf("parseFlagsWithConfig: %v", err)
+	}
+	if !opts.pr {
+		t.Error("pr: --checks (from config) should imply pr even with --pr=false")
 	}
 }

@@ -181,8 +181,11 @@ turn on `"pr"`. A missing file is fine; a malformed one warns to stderr and
 falls back to the built-in defaults rather than failing.
 
 To **disable** a boolean your config turns on, pass it explicitly false for the
-run — e.g. `treetop --pr=false` (or `-w=false`) overrides a config `"pr": true`.
-(There's no `--no-pr` yet — that's [tracked separately](https://github.com/snag-run/treetop/issues/94).)
+run — e.g. `treetop --pr=false` (or `-w=false`, `--checks=false`, …) overrides a
+config `"pr": true`. Two caveats: `color` has no positive flag, so toggle it with
+the existing `--no-color`; and `--checks`/`--notify` imply `--pr`, so disabling
+`--pr` alone won't stick while those are on. (There's no `--no-pr` yet — that's
+[tracked separately](https://github.com/snag-run/treetop/issues/94).)
 
 To find or inspect your settings without hunting for the path or schema:
 
