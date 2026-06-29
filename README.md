@@ -150,6 +150,36 @@ never descended into, so the cost of a deeper scan is just the directory stats).
 - **changed** — the most recent git activity in the worktree (commit / checkout
   / stage).
 
+## Config file
+
+If you find yourself retyping the same flags (`treetop -w --pr --checks`), set
+them once in a config file. `treetop` reads JSON from
+`$XDG_CONFIG_HOME/treetop/config.json`, falling back to
+`~/.config/treetop/config.json` when `$XDG_CONFIG_HOME` is unset or empty.
+
+```json
+{
+  "watch": true,
+  "pr": true,
+  "checks": true,
+  "notify": false,
+  "projects": false,
+  "color": true,
+  "interval": 2
+}
+```
+
+These keys mirror the persistent mode/display flags (`-w`, `--pr`, `--checks`,
+`--notify`, `-p`, `--no-color` as `"color"`, and `-i`). Per-run inputs
+(`--in-use`/`--open`, patterns) and the scan surface (`--root`/`--depth`) stay
+on the command line — they're situational, not defaults.
+
+Precedence is **CLI flag > config > built-in default**: a flag you pass for a
+single run wins, but flags you leave off fall back to the config (and then to
+the built-in default). The same implications apply — `"checks"` or `"notify"`
+turn on `"pr"`. A missing file is fine; a malformed one warns to stderr and
+falls back to the built-in defaults rather than failing.
+
 ## PR check status (`--pr`)
 
 With `--pr`, each worktree gets a glyph for the rolled-up CI status of the open

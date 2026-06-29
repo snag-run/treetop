@@ -96,7 +96,23 @@ type stringSlice []string
 func (s *stringSlice) String() string     { return strings.Join(*s, ",") }
 func (s *stringSlice) Set(v string) error { *s = append(*s, v); return nil }
 
+// parseFlags parses CLI args, seeding option defaults from the config file at
+// its standard location ($XDG_CONFIG_HOME/treetop/config.json, falling back to
+// ~/.config/treetop/config.json).
 func parseFlags(args []string) (options, error) {
+	path, err := configPath("")
+	if err != nil {
+		// Couldn't resolve a config location (e.g. $HOME unset): treat as no
+		// config rather than failing, and let flag/scan handling report any real
+		// problem. An empty path makes loadConfig return defaults silently.
+		path = ""
+	}
+	return parseFlagsWithConfig(args, path)
+}
+
+// parseFlagsWithConfig is parseFlags with the config file path injected, so
+// tests can point it at a temp file without touching the real home dir.
+func parseFlagsWithConfig(args []string, configFile string) (options, error) {
 	fs := flag.NewFlagSet("treetop", flag.ContinueOnError)
 	fs.Usage = func() { fmt.Fprint(os.Stderr, usage) }
 
@@ -144,8 +160,61 @@ func parseFlags(args []string) (options, error) {
 	if onlyInUse && onlyOpen {
 		return options{}, fmt.Errorf("--in-use and --open are mutually exclusive")
 	}
+
+	// Layer config under the explicitly-set flags. After Parse, each flag var
+	// holds either its built-in default (flag unset) or the user's value (flag
+	// set). flag.Visit walks only the flags actually set, so a config value seeds
+	// any flag the user left unset — giving precedence CLI flag > config >
+	// built-in default. The implied-flag rules and color resolution run after,
+	// so they hold however a value arrived.
+	set := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
+	wasSet := func(names ...string) bool {
+		for _, n := range names {
+			if set[n] {
+				return true
+			}
+		}
+		return false
+	}
+	cfg, cfgErr := loadConfig(configFile)
+	if cfgErr != nil {
+		// A malformed or unreadable config is non-fatal: warn once and fall back
+		// to built-in defaults, never aborting the dashboard.
+		fmt.Fprintf(os.Stderr, "treetop: warning: ignoring config: %v\n", cfgErr)
+		cfg = nil
+	}
+	if cfg != nil {
+		var cw, cpr, cchecks, cnotify, cprojects, cnoColor *bool
+		var cinterval *int
+		if !wasSet("watch", "w", "live") {
+			cw = &watch
+		}
+		if !wasSet("pr") {
+			cpr = &pr
+		}
+		if !wasSet("checks") {
+			cchecks = &checks
+		}
+		if !wasSet("notify") {
+			cnotify = &notify
+		}
+		if !wasSet("projects", "p") {
+			cprojects = &projectsOnly
+		}
+		if !wasSet("no-color") {
+			cnoColor = &noColor
+		}
+		if !wasSet("interval", "i") {
+			cinterval = &interval
+		}
+		applyConfig(cfg, cw, cpr, cchecks, cnotify, cprojects, cnoColor, cinterval)
+	}
+
 	// --checks expands the PR column into per-check rows, so it implies --pr: the
-	// same polling/gating, plus the rollup glyph each row hangs beneath.
+	// same polling/gating, plus the rollup glyph each row hangs beneath. The rule
+	// runs after the config merge so it holds whether checks came from a flag or
+	// the config.
 	if checks {
 		pr = true
 	}
