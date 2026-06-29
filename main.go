@@ -283,14 +283,15 @@ func main() {
 	// `treetop config` is likewise a verb: intercept it before flag parsing and
 	// inspect the persisted preferences (global config file only).
 	if len(args) > 0 && args[0] == "config" {
+		// The path is the whole point of this command, so a failure to resolve it
+		// (e.g. $HOME unset) is surfaced, not swallowed — printing an empty path
+		// would defeat the discoverability the command exists for.
 		path, err := configPath("")
 		if err != nil {
-			// Couldn't resolve a config location (e.g. $HOME unset): treat as no
-			// config rather than failing. An empty path makes loadConfig yield
-			// defaults silently.
-			path = ""
+			fmt.Fprintln(os.Stderr, "treetop:", err)
+			os.Exit(1)
 		}
-		if err := runConfig(os.Stdout, path, args[1:]); err != nil {
+		if err := runConfig(os.Stdout, os.Stderr, path, args[1:]); err != nil {
 			fmt.Fprintln(os.Stderr, "treetop:", err)
 			os.Exit(1)
 		}
