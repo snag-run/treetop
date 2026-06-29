@@ -35,6 +35,7 @@ const usage = `treetop - track git worktrees across projects
 Usage:
   treetop [flags] [pattern...]
   treetop bug                  open a prefilled bug report (auto-fills your env)
+  treetop config [path|show]   inspect persisted preferences (config file)
 
   [pattern] is an optional regular expression matched against project names
   (case-insensitive). Pass several patterns, or use alternation, to match more
@@ -274,6 +275,22 @@ func main() {
 	// open a prefilled bug report with the host environment auto-filled.
 	if len(args) > 0 && args[0] == "bug" {
 		if err := runBugReport(os.Stdin, os.Stdout, openBrowser); err != nil {
+			fmt.Fprintln(os.Stderr, "treetop:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	// `treetop config` is likewise a verb: intercept it before flag parsing and
+	// inspect the persisted preferences (global config file only).
+	if len(args) > 0 && args[0] == "config" {
+		path, err := configPath("")
+		if err != nil {
+			// Couldn't resolve a config location (e.g. $HOME unset): treat as no
+			// config rather than failing. An empty path makes loadConfig yield
+			// defaults silently.
+			path = ""
+		}
+		if err := runConfig(os.Stdout, path, args[1:]); err != nil {
 			fmt.Fprintln(os.Stderr, "treetop:", err)
 			os.Exit(1)
 		}

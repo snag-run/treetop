@@ -24,6 +24,56 @@ type config struct {
 	Interval *int  `json:"interval"`
 }
 
+// defaultConfig returns the built-in defaults for every config key, in one
+// place so both flag registration intent and `treetop config show` stay in
+// sync. These mirror the flag defaults registered in parseFlagsWithConfig
+// (watch/pr/checks/notify/projects false, color on, interval 2).
+func defaultConfig() config {
+	t, f := true, false
+	two := 2
+	return config{
+		Watch:    &f,
+		PR:       &f,
+		Checks:   &f,
+		Notify:   &f,
+		Projects: &f,
+		Color:    &t,
+		Interval: &two,
+	}
+}
+
+// effectiveConfig overlays the file's set keys on the built-in defaults,
+// yielding the persisted preferences in force before any CLI flag. A nil cfg
+// (no file) leaves the defaults untouched.
+func effectiveConfig(cfg *config) config {
+	eff := defaultConfig()
+	if cfg == nil {
+		return eff
+	}
+	if cfg.Watch != nil {
+		eff.Watch = cfg.Watch
+	}
+	if cfg.PR != nil {
+		eff.PR = cfg.PR
+	}
+	if cfg.Checks != nil {
+		eff.Checks = cfg.Checks
+	}
+	if cfg.Notify != nil {
+		eff.Notify = cfg.Notify
+	}
+	if cfg.Projects != nil {
+		eff.Projects = cfg.Projects
+	}
+	if cfg.Color != nil {
+		eff.Color = cfg.Color
+	}
+	if cfg.Interval != nil {
+		eff.Interval = cfg.Interval
+	}
+	return eff
+}
+
 // configPath returns the path to the config file. It honours $XDG_CONFIG_HOME
 // and falls back to ~/.config/treetop/config.json when it is unset or empty.
 // dir, when non-empty, overrides the lookup entirely (used by tests).
