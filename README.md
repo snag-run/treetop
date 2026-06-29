@@ -180,6 +180,14 @@ the built-in default). The same implications apply — `"checks"` or `"notify"`
 turn on `"pr"`. A missing file is fine; a malformed one warns to stderr and
 falls back to the built-in defaults rather than failing.
 
+To **disable** a boolean your config turns on, pass that flag explicitly false
+for the run — each overrides its own key: `treetop --pr=false` turns off a config
+`"pr": true`, `-w=false` a `"watch": true`, and likewise `--checks=false`,
+`--notify=false`, `-p=false`. Two caveats: `color` has no positive flag, so
+toggle it with the existing `--no-color`; and `--checks`/`--notify` imply `--pr`,
+so disabling `--pr` alone won't stick while those are on. (There's no `--no-pr`
+yet — that's [tracked separately](https://github.com/snag-run/treetop/issues/94).)
+
 To find or inspect your settings without hunting for the path or schema:
 
 - `treetop config path` — print the resolved config file path (even if it
