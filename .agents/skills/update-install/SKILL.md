@@ -1,52 +1,50 @@
 ---
 name: update-install
-description: Build treetop from the current checkout and install it over the existing on-PATH binary, on Linux or macOS. Use when the user wants to update, refresh, or reinstall their local treetop with the latest build from source (e.g. after merging a fix), rather than waiting for a tagged release.
+description: Build treetop from the current checkout and reinstall it via the repo Makefile on Linux or macOS. Use when the user wants to update, refresh, or reinstall their local treetop with the latest build from source (e.g. after merging a fix), rather than waiting for a tagged release.
 ---
 
 # Update the local treetop install
 
-Rebuild `treetop` from the current source tree and replace the binary already on
-the user's `PATH`. Works the same on Linux and macOS.
+Rebuild `treetop` from the current source tree using the repo `Makefile`, then
+reinstall it with the project's supported source-install path. Works the same on
+Linux and macOS.
 
 This installs an **unreleased dev build straight from source**. For a tagged
 release, download the prebuilt binary from the GitHub release instead.
 
 ## Steps
 
-1. **Build from the repo root** (you must be inside the treetop checkout):
+1. **Install from the repo root** (you must be inside the treetop checkout):
 
    ```sh
-   go build -trimpath -o /tmp/treetop-build .
+   make install
    ```
 
-   If the build fails, stop and surface the error — never install a stale or
-   partial binary over a working one.
+   `make install` delegates to `go install .`, so it builds the current checkout
+   and installs `treetop` into Go's bin directory. If it fails, stop and surface
+   the error.
 
-2. **Find the current install path** — reinstall over the existing copy so you
-   don't leave two `treetop` binaries on `PATH`:
+2. **Find the install target** so you know where the new binary landed:
 
    ```sh
-   TARGET="$(command -v treetop || true)"
+   BIN_DIR="$(go env GOBIN)"
+   if [ -z "$BIN_DIR" ]; then
+     GOPATH="$(go env GOPATH)"
+     BIN_DIR="${GOPATH%%:*}/bin"
+   fi
+   TARGET="$BIN_DIR/treetop"
    ```
 
-   If empty, treetop isn't installed yet; default to `/usr/local/bin/treetop`
-   unless the user names another directory that's on their `PATH`.
-
-3. **Install, handling permissions.** `install` ships on both Linux and macOS
-   and sets the mode in one step:
+3. **Check which binary the shell will run**:
 
    ```sh
-   install -m 0755 /tmp/treetop-build "$TARGET"
+   command -v treetop
    ```
 
-   If the target directory isn't writable, it needs `sudo`. **Don't run `sudo`
-   yourself** — passwordless sudo usually isn't configured and the password
-   prompt is interactive. Check writability, and if it fails, ask the user to
-   run the command in their own session with the `!` prefix:
-
-   ```sh
-   test -w "$(dirname "$TARGET")" || echo "needs sudo: ! sudo install -m 0755 /tmp/treetop-build $TARGET"
-   ```
+   If this does not match `$TARGET`, the install succeeded but the shell is still
+   resolving some other `treetop` earlier on `PATH`. Report both paths back to
+   the user. Do not silently overwrite the other binary; that is now outside the
+   Makefile-managed flow.
 
 4. **Verify** the new binary is live:
 
@@ -58,15 +56,17 @@ release, download the prebuilt binary from the GitHub release instead.
    `v0.2.1-0.20260627222925-71b992a2a45a` — the trailing short commit
    (`71b992a`) is the `HEAD` you built from, so it confirms the update took. It
    only falls back to `treetop dev` when the build carries no VCS info (built
-   outside the git checkout, or with `-buildvcs=false`). Also confirm the binary
-   resolves to the path you installed (`command -v treetop`), and report the
-   version back to the user.
+   outside the git checkout, or with `-buildvcs=false`). Also report the
+   resolved binary path (`command -v treetop`) back to the user.
 
 ## Platform notes
 
-- `/usr/local/bin` typically needs `sudo` on Linux and on Intel macOS.
-- Homebrew on Apple Silicon uses `/opt/homebrew/bin`, which is usually
-  user-writable — no `sudo` needed there.
+- `make install` uses Go's install location, not `/usr/local/bin`.
+- If `GOBIN` is set, the binary lands in `$GOBIN/treetop`.
+- Otherwise it lands in the `bin` directory under the first path entry from
+  `go env GOPATH`, which is typically `$HOME/go/bin/treetop`.
+- If that directory is not on `PATH`, the install can succeed while `treetop`
+  still resolves to an older copy elsewhere.
 - The version string comes from Go build info (`main.go`): a plain `go build`
   in the checkout already stamps the commit as a pseudo-version, so no extra
   `-ldflags` are needed for a local install. Tagged release builds carry a real
