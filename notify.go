@@ -118,13 +118,16 @@ func (n *notifier) fire(out []notification, project string, w Worktree, event, w
 }
 
 // notifyBody identifies the worktree and what changed, e.g.
-// "snag/feat-renderer-host-brand — changes requested".
+// "snag/feat-renderer-host-brand — changes requested". The project and branch
+// come straight from the filesystem and git, so they're scrubbed of control
+// runes the same way the rendered table is (see sanitizeDisplay): otherwise a
+// branch named with an embedded ESC/ST would inject into the OSC 9 sequence.
 func notifyBody(project string, w Worktree, what string) string {
 	ref := w.Branch
 	if ref == "" {
 		ref = w.Ref()
 	}
-	return project + "/" + ref + " — " + what
+	return sanitizeDisplay(project) + "/" + sanitizeDisplay(ref) + " — " + what
 }
 
 // sweep forgets worktrees no longer in view so a later reappearance re-baselines
@@ -176,7 +179,7 @@ func raiseNotifications(out *bufio.Writer, notes []notification) {
 // kitty; terminals that don't understand it swallow the OSC string and show
 // nothing. The terminator is ST (ESC \), not BEL, so we never ring the bell.
 func osc9(body string) string {
-	const esc = "\x1b"
+	const esc = "\033"
 	return wrapPassthrough(esc + "]9;" + body + esc + `\`)
 }
 
@@ -188,6 +191,6 @@ func wrapPassthrough(seq string) string {
 	if os.Getenv("TMUX") == "" {
 		return seq
 	}
-	const esc = "\x1b"
+	const esc = "\033"
 	return esc + "Ptmux;" + strings.ReplaceAll(seq, esc, esc+esc) + esc + `\`
 }

@@ -159,7 +159,7 @@ func TestSweepForgetsDepartedWorktree(t *testing.T) {
 func TestOSC9Format(t *testing.T) {
 	t.Setenv("TMUX", "") // ensure no passthrough wrapping
 	got := osc9("snag/feat — approved")
-	want := "\x1b]9;snag/feat — approved\x1b\\"
+	want := "\033]9;snag/feat — approved\033\\"
 	if got != want {
 		t.Fatalf("osc9 = %q, want %q", got, want)
 	}
@@ -167,22 +167,22 @@ func TestOSC9Format(t *testing.T) {
 
 func TestWrapPassthroughTmux(t *testing.T) {
 	t.Setenv("TMUX", "/tmp/tmux-1000/default,1,0")
-	got := wrapPassthrough("\x1b]9;hi\x1b\\")
-	if !strings.HasPrefix(got, "\x1bPtmux;") {
+	got := wrapPassthrough("\033]9;hi\033\\")
+	if !strings.HasPrefix(got, "\033Ptmux;") {
 		t.Fatalf("missing tmux passthrough prefix: %q", got)
 	}
-	if !strings.HasSuffix(got, "\x1b\\") {
+	if !strings.HasSuffix(got, "\033\\") {
 		t.Fatalf("missing ST terminator: %q", got)
 	}
 	// The inner sequence must have every ESC doubled so tmux passes it through.
-	if !strings.Contains(got, "\x1b\x1b]9;hi\x1b\x1b\\") {
+	if !strings.Contains(got, "\033\033]9;hi\033\033\\") {
 		t.Fatalf("inner ESC not doubled: %q", got)
 	}
 }
 
 func TestWrapPassthroughNoTmux(t *testing.T) {
 	t.Setenv("TMUX", "")
-	seq := "\x1b]9;hi\x1b\\"
+	seq := "\033]9;hi\033\\"
 	if got := wrapPassthrough(seq); got != seq {
 		t.Fatalf("wrapped outside tmux: %q", got)
 	}
@@ -194,7 +194,7 @@ func TestRaiseNotificationsWritesOSC9(t *testing.T) {
 	w := bufio.NewWriter(&buf)
 	raiseNotifications(w, []notification{{body: "snag/feat — CI failed"}})
 	w.Flush()
-	want := "\x1b]9;snag/feat — CI failed\x1b\\"
+	want := "\033]9;snag/feat — CI failed\033\\"
 	if buf.String() != want {
 		t.Fatalf("raiseNotifications wrote %q, want %q", buf.String(), want)
 	}
@@ -205,6 +205,16 @@ func TestNotifyBodyFallsBackToRef(t *testing.T) {
 	w := Worktree{Path: "/a", Detached: true, HasPR: true}
 	if got := notifyBody("snag", w, "CI failed"); got != "snag/(detached) — CI failed" {
 		t.Fatalf("notifyBody = %q", got)
+	}
+}
+
+func TestNotifyBodySanitizesControlRunes(t *testing.T) {
+	// A branch (or project) name carrying an escape byte must be scrubbed before
+	// it reaches the OSC 9 sequence — otherwise it injects into the terminal.
+	w := Worktree{Path: "/a", Branch: "feat\033]9;pwn\033\\evil", HasPR: true}
+	got := notifyBody("snag", w, "approved")
+	if strings.ContainsRune(got, '\033') {
+		t.Fatalf("notifyBody left an ESC in the body: %q", got)
 	}
 }
 

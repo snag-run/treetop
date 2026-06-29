@@ -400,7 +400,13 @@ func refreshLoop(opts options, queries <-chan string, out chan snapshot, done <-
 		projects, _, supported, cerr := collect(opts, tr, live)
 		s := snapshot{projects: projects, supported: supported, err: cerr, startedAt: started, notes: nf.diff(projects)}
 		select { // drop a stale pending snapshot, then deliver the fresh one
-		case <-out:
+		case old := <-out:
+			// Carry forward the dropped frame's notifications. nf.diff already
+			// advanced the per-worktree baseline past their transition, so a
+			// dropped note is lost for good (never re-detected) — prepend it to
+			// the fresh frame instead. Two emits can outrun one consume when a
+			// ticker tick and a filter-query change land close together.
+			s.notes = append(old.notes, s.notes...)
 		default:
 		}
 		select {
