@@ -202,6 +202,50 @@ func TestRollupChecksCapturesURL(t *testing.T) {
 	}
 }
 
+// TestRollupChecksMarksSkipped asserts the per-check Skipped flag is set for a
+// skipped CheckRun (so the "checks" view can hide it) while neutral/stale and a
+// StatusContext are not marked skipped, even though all three fold to
+// StateNeutral in the worst-wins rollup.
+func TestRollupChecksMarksSkipped(t *testing.T) {
+	entries := []ghRollupEntry{
+		{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "SKIPPED", Name: "skip-me"},
+		{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "NEUTRAL", Name: "neutral"},
+		{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "STALE", Name: "stale"},
+		{Typename: "StatusContext", State: "SUCCESS", Context: "lint"},
+	}
+	got := rollupChecks(entries)
+
+	skipped := map[string]bool{}
+	for _, c := range got {
+		skipped[c.Name] = c.Skipped
+	}
+	if !skipped["skip-me"] {
+		t.Errorf("skipped CheckRun should be marked Skipped: %+v", got)
+	}
+	for _, name := range []string{"neutral", "stale", "lint"} {
+		if skipped[name] {
+			t.Errorf("%q should not be marked Skipped: %+v", name, got)
+		}
+	}
+}
+
+// TestRollupChecksSkippedFoldsWithRealRun asserts that when a check has both a
+// skipped run and a run that actually executed (e.g. a stale skipped run beside
+// a fresh one), the folded row is not treated as skipped — the check ran.
+func TestRollupChecksSkippedFoldsWithRealRun(t *testing.T) {
+	entries := []ghRollupEntry{
+		{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "SKIPPED", Name: "ci"},
+		{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "SUCCESS", Name: "ci"},
+	}
+	got := rollupChecks(entries)
+	if len(got) != 1 {
+		t.Fatalf("expected one folded row, got %+v", got)
+	}
+	if got[0].Skipped {
+		t.Errorf("a check with a real run beside a skipped one should not be Skipped: %+v", got[0])
+	}
+}
+
 // TestGHPRJSONUnmarshal asserts the PR-level url and the per-entry detailsUrl /
 // targetUrl fields we added to the gh query actually decode, so the link data
 // reaches the renderer.

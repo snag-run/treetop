@@ -223,7 +223,7 @@ func TestRenderCheckRows(t *testing.T) {
 	// Flag on (with colour): each check renders as a coloured glyph + its name.
 	var on strings.Builder
 	r = newRenderer(&on, true, false, true)
-	r.checks = true
+	r.checks = checksAll
 	r.render(projects, true)
 	out := on.String()
 	for _, want := range []struct{ color, glyph, name string }{
@@ -238,6 +238,77 @@ func TestRenderCheckRows(t *testing.T) {
 	// Failures sort ahead of successes: lint's row precedes build's.
 	if strings.Index(out, "lint") > strings.Index(out, "build") {
 		t.Errorf("failing check should render before passing one:\n%s", out)
+	}
+}
+
+// TestRenderCheckRowsSkippedFilter asserts the three-way check view: checksAll
+// shows every per-check row (including skipped), checksRan drops skipped rows,
+// and checksCollapsed shows none.
+func TestRenderCheckRowsSkippedFilter(t *testing.T) {
+	now := time.Now()
+	wt := Worktree{
+		Path: "/wt", Branch: "feat", HasPR: true, Check: StateFailure,
+		Checks: []Check{
+			{Name: "lint", State: StateFailure},
+			{Name: "noop", State: StateNeutral, Skipped: true},
+			{Name: "build", State: StateSuccess},
+		},
+		Changed: now, HasTime: true, Edited: now, HasEdit: true,
+	}
+	projects := []Project{{Name: "snag", Worktrees: []Worktree{wt}}}
+
+	out := func(v checkView) string {
+		var b strings.Builder
+		r := newRenderer(&b, false, false, true)
+		r.checks = v
+		r.render(projects, true)
+		return b.String()
+	}
+
+	all := out(checksAll)
+	for _, name := range []string{"lint", "noop", "build"} {
+		if !strings.Contains(all, name) {
+			t.Errorf("checksAll should show %q:\n%s", name, all)
+		}
+	}
+
+	ran := out(checksRan)
+	if strings.Contains(ran, "noop") {
+		t.Errorf("checksRan should hide the skipped check:\n%s", ran)
+	}
+	for _, name := range []string{"lint", "build"} {
+		if !strings.Contains(ran, name) {
+			t.Errorf("checksRan should still show ran check %q:\n%s", name, ran)
+		}
+	}
+
+	collapsed := out(checksCollapsed)
+	for _, name := range []string{"lint", "noop", "build"} {
+		if strings.Contains(collapsed, name) {
+			t.Errorf("checksCollapsed should show no per-check rows, found %q:\n%s", name, collapsed)
+		}
+	}
+}
+
+// TestCheckViewCycle asserts the 'c' key cycle order and the next-state footer
+// labels: collapsed -> all checks -> checks -> collapse.
+func TestCheckViewCycle(t *testing.T) {
+	cases := []struct {
+		from      checkView
+		wantNext  checkView
+		wantLabel string
+	}{
+		{checksCollapsed, checksAll, "all checks"},
+		{checksAll, checksRan, "checks"},
+		{checksRan, checksCollapsed, "collapse"},
+	}
+	for _, c := range cases {
+		if got := c.from.next(); got != c.wantNext {
+			t.Errorf("%d.next() = %d, want %d", c.from, got, c.wantNext)
+		}
+		if got := c.wantNext.label(); got != c.wantLabel {
+			t.Errorf("%d.label() = %q, want %q", c.wantNext, got, c.wantLabel)
+		}
 	}
 }
 
@@ -258,7 +329,7 @@ func TestRenderCheckRowsGatedByProjectCount(t *testing.T) {
 	// Within the cap: the per-check row renders.
 	var within strings.Builder
 	r := newRenderer(&within, false, false, true)
-	r.checks = true
+	r.checks = checksAll
 	r.render([]Project{mkProject("a")}, true)
 	if !strings.Contains(within.String(), "lint-a") {
 		t.Errorf("within the cap, check rows should render:\n%s", within.String())
@@ -271,7 +342,7 @@ func TestRenderCheckRowsGatedByProjectCount(t *testing.T) {
 		overProjects = append(overProjects, mkProject(string(rune('a'+i))))
 	}
 	r = newRenderer(&over, false, false, true)
-	r.checks = true
+	r.checks = checksAll
 	r.render(overProjects, true)
 	if strings.Contains(over.String(), "lint-") {
 		t.Errorf("over the cap (%d projects), check rows should be suppressed:\n%s",
@@ -371,7 +442,7 @@ func TestRenderHyperlinks(t *testing.T) {
 
 	var on strings.Builder
 	r := newRenderer(&on, true, false, true)
-	r.checks = true
+	r.checks = checksAll
 	r.render(projects, true)
 	out := on.String()
 
@@ -393,7 +464,7 @@ func TestRenderHyperlinks(t *testing.T) {
 	// Colour off: no OSC 8 escapes at all.
 	var off strings.Builder
 	ro := newRenderer(&off, false, false, true)
-	ro.checks = true
+	ro.checks = checksAll
 	ro.render(projects, true)
 	if strings.Contains(off.String(), "\033]8;;") {
 		t.Errorf("no OSC 8 escapes should appear with colour off:\n%q", off.String())

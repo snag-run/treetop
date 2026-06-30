@@ -188,18 +188,22 @@ func TestWatchFooterFilterMode(t *testing.T) {
 	}
 
 	// The check-row toggle hint appears only when expansion is available, and
-	// flips wording with the current state.
+	// names the next mode in the collapse -> all -> checks cycle.
 	noToggle := watchFooter(r, footerState{total: 3, viewport: 10, prExpandable: false})
 	if strings.Contains(noToggle, "checks") || strings.Contains(noToggle, "collapse") {
 		t.Errorf("toggle hint should be hidden when expansion is unavailable: %q", noToggle)
 	}
-	collapsed := watchFooter(r, footerState{total: 3, viewport: 10, prExpandable: true, checksExpanded: false})
-	if !strings.Contains(collapsed, "c checks") {
-		t.Errorf("collapsed state should advertise the expand key: %q", collapsed)
+	collapsed := watchFooter(r, footerState{total: 3, viewport: 10, prExpandable: true, checksExpanded: checksCollapsed})
+	if !strings.Contains(collapsed, "c all checks") {
+		t.Errorf("collapsed state should advertise expanding to all checks: %q", collapsed)
 	}
-	expanded := watchFooter(r, footerState{total: 3, viewport: 10, prExpandable: true, checksExpanded: true})
-	if !strings.Contains(expanded, "c collapse") {
-		t.Errorf("expanded state should advertise the collapse key: %q", expanded)
+	all := watchFooter(r, footerState{total: 3, viewport: 10, prExpandable: true, checksExpanded: checksAll})
+	if !strings.Contains(all, "c checks") || strings.Contains(all, "c all checks") {
+		t.Errorf("all-checks state should advertise the filtered checks view: %q", all)
+	}
+	ran := watchFooter(r, footerState{total: 3, viewport: 10, prExpandable: true, checksExpanded: checksRan})
+	if !strings.Contains(ran, "c collapse") {
+		t.Errorf("checks state should advertise collapsing: %q", ran)
 	}
 }
 

@@ -19,13 +19,52 @@ const (
 	colBold   = "\033[1m"
 )
 
+// checkView is the per-check-row expansion mode for the --checks view. It is a
+// three-way cycle: no rows, every row, or every row except skipped checks. The
+// values are the cycle order the 'c' key steps through.
+type checkView int
+
+const (
+	checksCollapsed checkView = iota // no per-check rows
+	checksAll                        // every per-check row, including skipped
+	checksRan                        // per-check rows excluding skipped checks
+)
+
+// initialCheckView maps the --checks flag to the starting expansion mode:
+// --checks seeds the unfiltered "all checks" view, off starts collapsed.
+func initialCheckView(checks bool) checkView {
+	if checks {
+		return checksAll
+	}
+	return checksCollapsed
+}
+
+// next returns the expansion mode the 'c' key cycles to from v:
+// collapsed -> all -> ran -> collapsed.
+func (v checkView) next() checkView {
+	return (v + 1) % 3
+}
+
+// label is the next-state wording shown in the footer hint, so 'c' advertises
+// what pressing it will do (e.g. "all checks" while collapsed).
+func (v checkView) label() string {
+	switch v {
+	case checksAll:
+		return "all checks"
+	case checksRan:
+		return "checks"
+	default: // checksCollapsed
+		return "collapse"
+	}
+}
+
 // renderer writes project/worktree tables, optionally with ANSI color.
 type renderer struct {
 	w          io.Writer
 	color      bool
-	compact    bool // one line per project, no worktree enumeration
-	pr         bool // show the PR check-status glyph column (--pr)
-	checks     bool // expand a per-check row under each worktree (--checks)
+	compact    bool      // one line per project, no worktree enumeration
+	pr         bool      // show the PR check-status glyph column (--pr)
+	checks     checkView // per-check row expansion mode (--checks seeds checksAll)
 	home       string
 	filterDesc string // active filter description; empty means no filter
 }
@@ -274,7 +313,7 @@ func (r renderer) render(projects []Project, supported bool) {
 	// actually gets CI data: polling caps at maxPRPollProjects, so beyond that the
 	// expansion would be half-populated and a wall of rows. Above the cap the
 	// header already nudges the user to narrow further (see prHeaderNote).
-	expand := r.checks && len(projects) <= maxPRPollProjects
+	expand := r.checks != checksCollapsed && len(projects) <= maxPRPollProjects
 
 	for i, p := range projects {
 		if i > 0 {
@@ -313,9 +352,14 @@ func (r renderer) render(projects []Project, supported bool) {
 // renderCheckRows prints one indented row per CI check beneath its worktree, for
 // the --checks expanded view. Each row reuses the rollup glyph palette so a
 // check's glyph matches the worktree's summary glyph. A worktree with no PR (or
-// a PR with no individual checks) renders nothing.
+// a PR with no individual checks) renders nothing. In the checksRan mode skipped
+// checks are dropped, so the rows that actually ran aren't drowned out by a wall
+// of skipped non-required jobs.
 func (r renderer) renderCheckRows(wt Worktree) {
 	for _, c := range wt.Checks {
+		if c.Skipped && r.checks == checksRan {
+			continue
+		}
 		// Link the whole glyph+name as one target to its run page (detailsUrl).
 		body := r.checkGlyph(true, c.State) + " " + sanitizeDisplay(c.Name)
 		fmt.Fprintf(r.w, "        %s\n", r.hyperlink(c.URL, body))
