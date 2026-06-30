@@ -60,9 +60,21 @@ Flags:
   --open                 show only worktrees without a session (open)
   --root DIR             directory to scan for repos (repeatable; default: $HOME)
   --depth N              levels below each root to scan for repos (default 1, max 3)
-  --no-color             disable ANSI color
   -V, --version          print version and exit
   -h, --help             show this help
+
+Negation flags:
+  Turn a config-enabled boolean off for a single run; each beats the config
+  file (CLI > config). With both the positive and negative form, the last one
+  on the command line wins. --no-pr cannot combine with --checks/--notify,
+  which require PR data.
+
+  --no-watch             disable live mode
+  --no-pr                disable the PR check-status glyph
+  --no-checks            disable per-check rows
+  --no-notify            disable desktop notifications
+  --no-projects          disable one-line-per-project collapsing
+  --no-color             disable ANSI color
 
 In-use detection combines a best-effort session scan (Linux via /proc, macOS via
 ps+lsof: live Claude Code and Codex sessions, including subagents via open
@@ -135,6 +147,9 @@ func parseFlagsWithConfig(args []string, configFile string) (options, error) {
 	// Built-in flag defaults come from defaultConfig() so flag registration and
 	// `treetop config show` derive from one struct.
 	d := defaultConfig()
+	// --no-color is a BoolFunc (see negate below), which has no default slot, so
+	// seed the built-in here to match the old --no-color BoolVar default.
+	noColor = !*d.Color
 	fs.BoolVar(&watch, "watch", *d.Watch, "")
 	fs.BoolVar(&watch, "w", *d.Watch, "")
 	fs.BoolVar(&watch, "live", *d.Watch, "") // alias for --watch
@@ -149,11 +164,26 @@ func parseFlagsWithConfig(args []string, configFile string) (options, error) {
 	fs.BoolVar(&pr, "pr", *d.PR, "")
 	fs.BoolVar(&checks, "checks", *d.Checks, "")
 	fs.BoolVar(&notify, "notify", *d.Notify, "")
-	fs.BoolVar(&noColor, "no-color", !*d.Color, "")
 	fs.BoolVar(&showVersion, "version", false, "")
 	fs.BoolVar(&showVersion, "V", false, "")
 	fs.Var(&roots, "root", "")
 	fs.IntVar(&depth, "depth", 1, "")
+
+	// Negation flags turn a config-backed boolean off for a single run. Each
+	// writes false into the same variable as its positive form, so flag's
+	// left-to-right parse makes the last of --pr/--no-pr on the line win, and
+	// flag.Visit reports the --no-* name as set — letting wasSet() count it as an
+	// explicit CLI flag that beats config (CLI > config). --no-color writes the
+	// inverted noColor var, mirroring the positive form's !*d.Color default.
+	negate := func(name string, target *bool, val bool) {
+		fs.BoolFunc(name, "", func(string) error { *target = val; return nil })
+	}
+	negate("no-watch", &watch, false)
+	negate("no-pr", &pr, false)
+	negate("no-checks", &checks, false)
+	negate("no-notify", &notify, false)
+	negate("no-projects", &projectsOnly, false)
+	negate("no-color", &noColor, true)
 
 	if err := fs.Parse(args); err != nil {
 		return options{}, err
@@ -191,19 +221,19 @@ func parseFlagsWithConfig(args []string, configFile string) (options, error) {
 	if cfg != nil {
 		var cw, cpr, cchecks, cnotify, cprojects, cnoColor *bool
 		var cinterval *int
-		if !wasSet("watch", "w", "live") {
+		if !wasSet("watch", "w", "live", "no-watch") {
 			cw = &watch
 		}
-		if !wasSet("pr") {
+		if !wasSet("pr", "no-pr") {
 			cpr = &pr
 		}
-		if !wasSet("checks") {
+		if !wasSet("checks", "no-checks") {
 			cchecks = &checks
 		}
-		if !wasSet("notify") {
+		if !wasSet("notify", "no-notify") {
 			cnotify = &notify
 		}
-		if !wasSet("projects", "p") {
+		if !wasSet("projects", "p", "no-projects") {
 			cprojects = &projectsOnly
 		}
 		if !wasSet("no-color") {
@@ -213,6 +243,28 @@ func parseFlagsWithConfig(args []string, configFile string) (options, error) {
 			cinterval = &interval
 		}
 		applyConfig(cfg, cw, cpr, cchecks, cnotify, cprojects, cnoColor, cinterval)
+	}
+
+	// --no-pr conflicts with anything that implies --pr. --checks and --notify
+	// both need PR data, so an explicitly-disabled --pr alongside an effective
+	// --checks/--notify (from either their flag or config) is contradictory: error
+	// rather than silently honour one over the other. Keyed on the effective PR
+	// state (not just whether --no-pr was seen) so the last-wins rule for the
+	// --pr/--no-pr pair still holds; gated on the same conditions the implications
+	// below use, so the two stay in lockstep. Note this checks wasSet("no-pr"), not
+	// "pr": --pr=false is deliberately left overridable by the implications below
+	// (see TestChecksImplicationOutranksExplicitFalsePR), only an explicit --no-pr
+	// is a hard conflict.
+	prExplicitlyDisabled := !pr && wasSet("no-pr")
+	if prExplicitlyDisabled && (checks || notify) {
+		var implied []string
+		if checks {
+			implied = append(implied, "--checks")
+		}
+		if notify {
+			implied = append(implied, "--notify")
+		}
+		return options{}, fmt.Errorf("--no-pr conflicts with %s, which require PR data", strings.Join(implied, " and "))
 	}
 
 	// --checks expands the PR column into per-check rows, so it implies --pr: the
