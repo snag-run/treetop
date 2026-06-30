@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -234,5 +235,120 @@ func TestChecksImplicationOutranksExplicitFalsePR(t *testing.T) {
 	}
 	if !opts.pr {
 		t.Error("pr: --checks (from config) should imply pr even with --pr=false")
+	}
+}
+
+func TestNegationFlagsBeatConfig(t *testing.T) {
+	// The --no-* variants are the discoverable way to disable a config-enabled
+	// boolean for a single run; each must register as explicitly set and beat the
+	// config (CLI > config), mirroring the --flag=false path.
+	path := writeConfig(t, `{"watch":true,"pr":true,"projects":true,"color":true}`)
+	opts, err := parseFlagsWithConfig(
+		[]string{"--root", "/some/dir", "--no-watch", "--no-pr", "--no-projects", "--no-color"},
+		path,
+	)
+	if err != nil {
+		t.Fatalf("parseFlagsWithConfig: %v", err)
+	}
+	if opts.watch {
+		t.Error("watch: --no-watch did not override config true")
+	}
+	if opts.pr {
+		t.Error("pr: --no-pr did not override config true")
+	}
+	if opts.projectsOnly {
+		t.Error("projects: --no-projects did not override config true")
+	}
+	if opts.color {
+		t.Error("color: --no-color did not override config color:true")
+	}
+}
+
+func TestNegationFlagsChecksNotifyBeatConfig(t *testing.T) {
+	// --no-checks / --no-notify on their own (no --pr implication present) must
+	// disable the config-enabled booleans. pr stays on from config since nothing
+	// disables it here.
+	path := writeConfig(t, `{"checks":true,"notify":true,"pr":true}`)
+	opts, err := parseFlagsWithConfig(
+		[]string{"--root", "/some/dir", "--no-checks", "--no-notify"},
+		path,
+	)
+	if err != nil {
+		t.Fatalf("parseFlagsWithConfig: %v", err)
+	}
+	if opts.checks {
+		t.Error("checks: --no-checks did not override config true")
+	}
+	if opts.notify {
+		t.Error("notify: --no-notify did not override config true")
+	}
+	if !opts.pr {
+		t.Error("pr: config true should survive --no-checks/--no-notify")
+	}
+}
+
+func TestNegationLastOneWins(t *testing.T) {
+	// --pr and --no-pr in the same invocation is last-one-wins (no special
+	// conflict detection): both write the same variable, so flag's left-to-right
+	// parse decides. Check both orderings.
+	t.Run("no-pr then pr", func(t *testing.T) {
+		opts, err := parseFlagsWithConfig([]string{"--root", "/some/dir", "--no-pr", "--pr"}, "")
+		if err != nil {
+			t.Fatalf("parseFlagsWithConfig: %v", err)
+		}
+		if !opts.pr {
+			t.Error("pr: trailing --pr should win over earlier --no-pr")
+		}
+	})
+	t.Run("pr then no-pr", func(t *testing.T) {
+		opts, err := parseFlagsWithConfig([]string{"--root", "/some/dir", "--pr", "--no-pr"}, "")
+		if err != nil {
+			t.Fatalf("parseFlagsWithConfig: %v", err)
+		}
+		if opts.pr {
+			t.Error("pr: trailing --no-pr should win over earlier --pr")
+		}
+	})
+	// The conflict check keys off the effective PR state, not whether --no-pr was
+	// ever seen, so a trailing --pr that wins must not trip the hard error even
+	// when an implied flag (here --notify) is also on.
+	t.Run("no-pr then pr with notify does not error", func(t *testing.T) {
+		opts, err := parseFlagsWithConfig([]string{"--root", "/some/dir", "--notify", "--no-pr", "--pr"}, "")
+		if err != nil {
+			t.Fatalf("parseFlagsWithConfig: %v", err)
+		}
+		if !opts.pr {
+			t.Error("pr: trailing --pr should win over earlier --no-pr")
+		}
+	})
+}
+
+func TestNoPRConflictsWithImpliedFlags(t *testing.T) {
+	// --no-pr alongside anything that implies PR data (--checks/--notify, from
+	// either their flag or config) is contradictory and a hard error.
+	cases := []struct {
+		name string
+		args []string
+		cfg  string
+	}{
+		{"flag checks", []string{"--root", "/d", "--no-pr", "--checks"}, ""},
+		{"flag notify", []string{"--root", "/d", "--no-pr", "--notify"}, ""},
+		{"config checks", []string{"--root", "/d", "--no-pr"}, `{"checks":true}`},
+		{"config notify", []string{"--root", "/d", "--no-pr"}, `{"notify":true}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := ""
+			if tc.cfg != "" {
+				path = writeConfig(t, tc.cfg)
+			}
+			_, err := parseFlagsWithConfig(tc.args, path)
+			if err == nil {
+				t.Fatal("expected error for --no-pr with an implied --pr flag, got nil")
+			}
+			if !strings.Contains(err.Error(), "--no-pr conflicts") {
+				t.Errorf("error = %q, want it to mention the --no-pr conflict", err)
+			}
+		})
 	}
 }

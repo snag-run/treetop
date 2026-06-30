@@ -134,6 +134,7 @@ $ treetop -p
 | `--root DIR` | Directory to scan for repos (repeatable; default `$HOME`) |
 | `--depth N` | Levels below each root to scan for repos (default 1, max 3) |
 | `--no-color` | Disable ANSI color (also honors `NO_COLOR`) |
+| `--no-watch`, `--no-pr`, `--no-checks`, `--no-notify`, `--no-projects` | Negation flags: turn a config-enabled boolean off for a single run (CLI > config). With both forms, the last on the line wins; `--no-pr` cannot combine with `--checks`/`--notify` |
 
 By default `treetop` scans `$HOME` one level deep for git worktrees and groups
 them by repository. A bare repo is discovered via any of its linked worktrees.
@@ -180,13 +181,15 @@ the built-in default). The same implications apply — `"checks"` or `"notify"`
 turn on `"pr"`. A missing file is fine; a malformed one warns to stderr and
 falls back to the built-in defaults rather than failing.
 
-To **disable** a boolean your config turns on, pass that flag explicitly false
-for the run — each overrides its own key: `treetop --pr=false` turns off a config
-`"pr": true`, `-w=false` a `"watch": true`, and likewise `--checks=false`,
-`--notify=false`, `-p=false`. Two caveats: `color` has no positive flag, so
-toggle it with the existing `--no-color`; and `--checks`/`--notify` imply `--pr`,
-so disabling `--pr` alone won't stick while those are on. (There's no `--no-pr`
-yet — that's [tracked separately](https://github.com/snag-run/treetop/issues/94).)
+To **disable** a boolean your config turns on, pass its negation flag for the
+run: `--no-watch`, `--no-pr`, `--no-checks`, `--no-notify`, `--no-projects`, or
+`--no-color`. Each overrides its own key (`treetop --no-pr` turns off a config
+`"pr": true`, and so on) and counts as explicitly set, so it beats the config.
+The Go-flag form still works too (`--pr=false`, `-w=false`). With both the
+positive and negative form on the line, the last one wins. One caveat:
+`--checks`/`--notify` imply `--pr`, so `--pr=false` is re-enabled if either is
+still on, and an explicit `--no-pr` alongside either (from a flag or the config)
+is a hard error — drop those too if you want to run without PR data.
 
 To find or inspect your settings without hunting for the path or schema:
 
