@@ -24,10 +24,10 @@ type config struct {
 	Interval *int  `json:"interval"`
 }
 
-// defaultConfig returns the built-in defaults for every config key, in one
-// place so both flag registration intent and `treetop config show` stay in
-// sync. These mirror the flag defaults registered in parseFlagsWithConfig
-// (watch/pr/checks/notify/projects false, color on, interval 2).
+// defaultConfig returns the built-in defaults for every config key
+// (watch/pr/checks/notify/projects false, color on, interval 2), in one place:
+// parseFlagsWithConfig registers these as its flag defaults and `treetop config
+// show` reports them, so both derive from this single struct.
 func defaultConfig() config {
 	t, f := true, false
 	two := 2

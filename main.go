@@ -132,21 +132,24 @@ func parseFlagsWithConfig(args []string, configFile string) (options, error) {
 		roots        stringSlice
 		exprs        stringSlice
 	)
-	fs.BoolVar(&watch, "watch", false, "")
-	fs.BoolVar(&watch, "w", false, "")
-	fs.BoolVar(&watch, "live", false, "") // alias for --watch
+	// Built-in flag defaults come from defaultConfig() so flag registration and
+	// `treetop config show` derive from one struct.
+	d := defaultConfig()
+	fs.BoolVar(&watch, "watch", *d.Watch, "")
+	fs.BoolVar(&watch, "w", *d.Watch, "")
+	fs.BoolVar(&watch, "live", *d.Watch, "") // alias for --watch
 	fs.Var(&exprs, "regexp", "")
 	fs.Var(&exprs, "e", "")
-	fs.IntVar(&interval, "interval", 2, "")
-	fs.IntVar(&interval, "i", 2, "")
+	fs.IntVar(&interval, "interval", *d.Interval, "")
+	fs.IntVar(&interval, "i", *d.Interval, "")
 	fs.BoolVar(&onlyInUse, "in-use", false, "")
 	fs.BoolVar(&onlyOpen, "open", false, "")
-	fs.BoolVar(&projectsOnly, "projects", false, "")
-	fs.BoolVar(&projectsOnly, "p", false, "")
-	fs.BoolVar(&pr, "pr", false, "")
-	fs.BoolVar(&checks, "checks", false, "")
-	fs.BoolVar(&notify, "notify", false, "")
-	fs.BoolVar(&noColor, "no-color", false, "")
+	fs.BoolVar(&projectsOnly, "projects", *d.Projects, "")
+	fs.BoolVar(&projectsOnly, "p", *d.Projects, "")
+	fs.BoolVar(&pr, "pr", *d.PR, "")
+	fs.BoolVar(&checks, "checks", *d.Checks, "")
+	fs.BoolVar(&notify, "notify", *d.Notify, "")
+	fs.BoolVar(&noColor, "no-color", !*d.Color, "")
 	fs.BoolVar(&showVersion, "version", false, "")
 	fs.BoolVar(&showVersion, "V", false, "")
 	fs.Var(&roots, "root", "")
