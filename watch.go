@@ -135,10 +135,11 @@ func runWatch(opts options) {
 	var viewport, maxOffset int
 
 	// Check-row expansion state. checksExpanded is the user's intent (seeded by
-	// --checks); canExpand is whether the current view is narrow enough to honour
-	// it, recomputed each render. The 'c' key toggles intent only while expansion
-	// is available, so it reads as disabled when too many projects are in view.
-	checksExpanded := opts.checks
+	// --checks to the "all checks" mode); canExpand is whether the current view is
+	// narrow enough to honour it, recomputed each render. The 'c' key cycles intent
+	// (collapse -> all -> checks) only while expansion is available, so it reads as
+	// disabled when too many projects are in view.
+	checksExpanded := initialCheckView(opts.checks)
 	canExpand := false
 
 	// Live-filter state. filtering is true while the filter box is open for
@@ -296,7 +297,7 @@ func runWatch(opts options) {
 				}
 			case 'c':
 				if canExpand {
-					checksExpanded = !checksExpanded // toggle per-check rows
+					checksExpanded = checksExpanded.next() // cycle per-check rows
 				}
 			}
 		}
@@ -585,12 +586,12 @@ func parseMouse(br *bufio.Reader) (event, bool) {
 // footerState is the input to the bottom status line.
 type footerState struct {
 	offset, total, viewport int
-	filterable              bool   // the live filter box is available (no CLI grep flags)
-	filtering               bool   // the filter box is open for editing
-	query                   string // active filter text (may be empty)
-	validQuery              bool   // whether query compiles as a regex
-	prExpandable            bool   // the 'c' check-row toggle is available (--pr, within the cap)
-	checksExpanded          bool   // per-check rows are currently expanded
+	filterable              bool      // the live filter box is available (no CLI grep flags)
+	filtering               bool      // the filter box is open for editing
+	query                   string    // active filter text (may be empty)
+	validQuery              bool      // whether query compiles as a regex
+	prExpandable            bool      // the 'c' check-row toggle is available (--pr, within the cap)
+	checksExpanded          checkView // current per-check row expansion mode
 }
 
 // watchFooter renders the bottom status line (no trailing newline so the
@@ -620,11 +621,8 @@ func watchFooter(r renderer, s footerState) string {
 		parts = append(parts, "/ filter")
 	}
 	if s.prExpandable {
-		if s.checksExpanded {
-			parts = append(parts, "c collapse")
-		} else {
-			parts = append(parts, "c checks")
-		}
+		// Advertise the next mode in the cycle, so the hint says what 'c' will do.
+		parts = append(parts, "c "+s.checksExpanded.next().label())
 	}
 	parts = append(parts, "q quit")
 	keys := strings.Join(parts, " · ")
@@ -640,7 +638,7 @@ func watchFooter(r renderer, s footerState) string {
 func runWatchPlain(opts options) {
 	out := bufio.NewWriter(os.Stdout)
 	r := newRenderer(out, opts.color, opts.projectsOnly, opts.pr)
-	r.checks = opts.checks
+	r.checks = initialCheckView(opts.checks)
 	ticker := time.NewTicker(time.Duration(opts.interval) * time.Second)
 	defer ticker.Stop()
 	tr := newTracker(inUseDecay)

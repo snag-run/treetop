@@ -252,8 +252,12 @@ the rollup. It implies `--pr` (same `gh` polling and gating) and applies to the
 full view only — `--projects` stays one line per project. The per-check data
 rides along on the same `gh` call, so expanding costs no extra requests.
 
-In `--watch`, the `c` key toggles the expansion live (so you don't have to
-relaunch), with `--checks` just setting the initial state. Expansion is **gated
+In `--watch`, the `c` key cycles the expansion live through three states (so you
+don't have to relaunch): **collapse** (no per-check rows) → **all checks** (every
+row, including skipped) → **checks** (every row *except* skipped). The third mode
+drops the long tail of `○` skipped jobs that didn't run for this change, keeping
+the checks that actually ran. `--checks` seeds the "all checks" state, and the
+footer hint names the next mode in the cycle. Expansion is **gated
 to the poll cap**: it's only available once the view is narrowed to
 `maxPRPollProjects` (5) or fewer projects — the same set that actually gets CI
 data. Above the cap the `c` hint disappears and the header's "first 5 of N —

@@ -73,9 +73,10 @@ type ghRollupEntry struct {
 // per-check rows the --checks view expands beneath a worktree. The rollup glyph
 // folds these into one worst-wins state; this keeps the individual name + state.
 type Check struct {
-	Name  string
-	State CheckState
-	URL   string // link to the check's run page (detailsUrl/targetUrl); may be empty
+	Name    string
+	State   CheckState
+	URL     string // link to the check's run page (detailsUrl/targetUrl); may be empty
+	Skipped bool   // the check was skipped for this change (a no-op, distinct from neutral)
 }
 
 // ghPR is one open pull request as returned by `gh pr list --json`.
@@ -145,6 +146,16 @@ func checkStateOf(e ghRollupEntry) CheckState {
 	}
 }
 
+// checkSkipped reports whether a rollup entry was skipped — a check configured
+// for the repo that didn't run for this change (e.g. a path-filtered job). It
+// folds into StateNeutral for the worst-wins rollup, so it can't be told apart
+// by state alone; the per-check view ("checks", skipped hidden) needs the
+// distinction, hence this separate flag. A CheckRun reports it via conclusion;
+// a StatusContext has no skipped state, so it's never skipped.
+func checkSkipped(e ghRollupEntry) bool {
+	return e.Typename == "CheckRun" && e.Status == "COMPLETED" && e.Conclusion == "SKIPPED"
+}
+
 // rollupCheckState folds a PR's rollup entries into a single worst-wins state.
 // An empty rollup is StateNeutral, never StateSuccess: a PR with no configured
 // checks must not masquerade as passing.
@@ -206,15 +217,19 @@ func rollupChecks(entries []ghRollupEntry) []Check {
 	checks := make([]Check, 0, len(entries))
 	for _, e := range entries {
 		name, state, url := checkName(e), checkStateOf(e), checkURLOf(e)
+		skipped := checkSkipped(e)
 		if i, ok := byName[name]; ok {
 			checks[i].State = max(checks[i].State, state) // worst wins
-			if checks[i].URL == "" {                      // keep the first link we saw
+			// A folded check is skipped only when every entry was skipped: one real
+			// run beside a stale skipped run means the check actually ran.
+			checks[i].Skipped = checks[i].Skipped && skipped
+			if checks[i].URL == "" { // keep the first link we saw
 				checks[i].URL = url
 			}
 			continue
 		}
 		byName[name] = len(checks)
-		checks = append(checks, Check{Name: name, State: state, URL: url})
+		checks = append(checks, Check{Name: name, State: state, URL: url, Skipped: skipped})
 	}
 	sort.SliceStable(checks, func(i, j int) bool {
 		if checks[i].State != checks[j].State {

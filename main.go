@@ -334,7 +334,7 @@ func runOnce(opts options) error {
 		fmt.Fprintf(os.Stderr, "treetop: warning: cannot read root %s\n", bad)
 	}
 	r := newRenderer(os.Stdout, opts.color, opts.projectsOnly, opts.pr)
-	r.checks = opts.checks
+	r.checks = initialCheckView(opts.checks)
 	r.filterDesc = filterDescription(opts)
 	r.render(projects, supported)
 	if note := unsupportedSessionNote(supported); note != "" {
