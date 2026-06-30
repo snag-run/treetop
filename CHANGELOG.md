@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.5.0](https://github.com/snag-run/treetop/compare/v0.4.0...v0.5.0) (2026-06-30)
+
+
+### Features
+
+* add --notify for desktop notifications in watch mode ([#88](https://github.com/snag-run/treetop/issues/88)) ([c76ea14](https://github.com/snag-run/treetop/commit/c76ea1492eef3d0cac48508389ac1afadaecda0b))
+* make the c check toggle a three-way collapse/all/checks cycle ([#97](https://github.com/snag-run/treetop/issues/97)) ([3d2d47e](https://github.com/snag-run/treetop/commit/3d2d47ec3f39543e808a4124a9d291d02b6e66c9))
+* negatable flags to override config-enabled booleans ([#98](https://github.com/snag-run/treetop/issues/98)) ([ce7cbf6](https://github.com/snag-run/treetop/commit/ce7cbf68014c93743db688859a0ae6e511955404)), closes [#94](https://github.com/snag-run/treetop/issues/94)
+* persist preferred flags in a config file ([#90](https://github.com/snag-run/treetop/issues/90)) ([51b126b](https://github.com/snag-run/treetop/commit/51b126bf45c1a8d8af1c226c18401454501bb819))
+* read-only config command to inspect preferences ([#92](https://github.com/snag-run/treetop/issues/92)) ([9555dab](https://github.com/snag-run/treetop/commit/9555dab42a0845daca41f35b1b24fc2ff1f626f2))
+
 ## [0.4.0](https://github.com/snag-run/treetop/compare/v0.3.0...v0.4.0) (2026-06-28)
 
 
