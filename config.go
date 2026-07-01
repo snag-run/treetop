@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 )
 
 // config holds the persisted flag defaults loaded from config.json. Every field
@@ -14,14 +15,19 @@ import (
 // its zero value: nil means "not in the file", so it never overrides a value
 // already in place. Unknown JSON keys are ignored on purpose (no
 // DisallowUnknownFields) to keep the format forward-compatible.
+// The omitempty on every field is load-bearing for the write path (saveConfig):
+// a nil pointer is omitted, so the persisted file stays a minimal overlay that
+// lists only the keys the user has actually set. A pointer to a zero value
+// (e.g. watch=false) is non-nil and is written, so `config set watch false`
+// round-trips.
 type config struct {
-	Watch    *bool `json:"watch"`
-	PR       *bool `json:"pr"`
-	Checks   *bool `json:"checks"`
-	Notify   *bool `json:"notify"`
-	Projects *bool `json:"projects"`
-	Color    *bool `json:"color"`
-	Interval *int  `json:"interval"`
+	Watch    *bool `json:"watch,omitempty"`
+	PR       *bool `json:"pr,omitempty"`
+	Checks   *bool `json:"checks,omitempty"`
+	Notify   *bool `json:"notify,omitempty"`
+	Projects *bool `json:"projects,omitempty"`
+	Color    *bool `json:"color,omitempty"`
+	Interval *int  `json:"interval,omitempty"`
 }
 
 // defaultConfig returns the built-in defaults for every config key
@@ -110,6 +116,89 @@ func loadConfig(path string) (*config, error) {
 		return nil, fmt.Errorf("parsing %s: %w", path, err)
 	}
 	return &cfg, nil
+}
+
+// saveConfig writes cfg to path as pretty-printed JSON, creating the parent
+// directory when absent. Only the keys set on cfg are written (nil pointers are
+// omitted, see the config struct), so the file stays a minimal overlay of the
+// built-in defaults rather than a full snapshot. Written 0o644 in a 0o755 dir,
+// matching the usual dotfile permissions.
+func saveConfig(path string, cfg *config) error {
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
+}
+
+// setConfigValue parses value for the given key and assigns it on cfg. Boolean
+// keys accept the strconv.ParseBool spellings (true/false/1/0/…); interval must
+// be a positive integer (a non-positive refresh interval is meaningless and the
+// dashboard would clamp it to 1 anyway). An unknown key is an error so a typo
+// like `config set watchh true` is caught rather than silently ignored.
+func setConfigValue(cfg *config, key, value string) error {
+	setBool := func(dst **bool) error {
+		b, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("invalid boolean %q for %s (want true or false)", value, key)
+		}
+		*dst = &b
+		return nil
+	}
+	switch key {
+	case "watch":
+		return setBool(&cfg.Watch)
+	case "pr":
+		return setBool(&cfg.PR)
+	case "checks":
+		return setBool(&cfg.Checks)
+	case "notify":
+		return setBool(&cfg.Notify)
+	case "projects":
+		return setBool(&cfg.Projects)
+	case "color":
+		return setBool(&cfg.Color)
+	case "interval":
+		n, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("invalid integer %q for interval", value)
+		}
+		if n < 1 {
+			return fmt.Errorf("interval must be at least 1, got %d", n)
+		}
+		cfg.Interval = &n
+		return nil
+	default:
+		return fmt.Errorf("unknown config key %q", key)
+	}
+}
+
+// unsetConfigValue clears the given key on cfg (back to nil, so it reverts to
+// the built-in default). An unknown key is an error, mirroring setConfigValue.
+func unsetConfigValue(cfg *config, key string) error {
+	switch key {
+	case "watch":
+		cfg.Watch = nil
+	case "pr":
+		cfg.PR = nil
+	case "checks":
+		cfg.Checks = nil
+	case "notify":
+		cfg.Notify = nil
+	case "projects":
+		cfg.Projects = nil
+	case "color":
+		cfg.Color = nil
+	case "interval":
+		cfg.Interval = nil
+	default:
+		return fmt.Errorf("unknown config key %q", key)
+	}
+	return nil
 }
 
 // applyConfig seeds option defaults from the config, for keys present in the

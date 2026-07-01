@@ -35,7 +35,8 @@ const usage = `treetop - track git worktrees across projects
 Usage:
   treetop [flags] [pattern...]
   treetop bug                  open a prefilled bug report (auto-fills your env)
-  treetop config [path|show]   inspect persisted preferences (config file)
+  treetop config               inspect and edit persisted preferences (config file)
+                               [path|show|set <key> <value>|unset <key>]
 
   [pattern] is an optional regular expression matched against project names
   (case-insensitive). Pass several patterns, or use alternation, to match more
