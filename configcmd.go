@@ -72,9 +72,9 @@ func configSet(out, errw io.Writer, configFile string, rest []string) error {
 		return configUsageErr(errw, fmt.Errorf("config set takes a key and a value"))
 	}
 	key, value := rest[0], rest[1]
-	cfg, err := loadConfig(configFile)
+	cfg, err := loadConfigStrict(configFile)
 	if err != nil {
-		return fmt.Errorf("refusing to modify malformed config %s: %w", configFile, err)
+		return fmt.Errorf("refusing to modify config %s: %w", configFile, err)
 	}
 	if cfg == nil {
 		cfg = &config{}
@@ -98,9 +98,9 @@ func configUnset(out, errw io.Writer, configFile string, rest []string) error {
 		return configUsageErr(errw, fmt.Errorf("config unset takes a key"))
 	}
 	key := rest[0]
-	cfg, err := loadConfig(configFile)
+	cfg, err := loadConfigStrict(configFile)
 	if err != nil {
-		return fmt.Errorf("refusing to modify malformed config %s: %w", configFile, err)
+		return fmt.Errorf("refusing to modify config %s: %w", configFile, err)
 	}
 	if cfg == nil {
 		// No file: nothing persisted to clear. Still validate the key so a typo

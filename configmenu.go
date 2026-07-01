@@ -37,11 +37,6 @@ var menuRows = []settingRow{
 	{"interval", kindInt},
 }
 
-// intMenuMax caps the interval the menu will dial up to, so holding → can't run
-// the stored value off to something absurd. There is no lower bound to add here:
-// setConfigValue already rejects interval < 1.
-const intMenuMax = 3600
-
 // configMenu is the interactive editor's state: the overlay being edited (cfg,
 // the same minimal subset of set keys that gets persisted) and the highlighted
 // row. It is deliberately free of any terminal I/O so the whole key-handling
@@ -106,7 +101,10 @@ func (m *configMenu) adjust(delta int) bool {
 	case kindBool:
 		return m.setBool(row.key, delta > 0)
 	case kindInt:
-		next := clamp(intValue(eff, row.key)+delta, 1, intMenuMax)
+		// Step by delta but never below 1, matching setConfigValue's contract
+		// (any positive integer). No upper clamp, so an interval already above
+		// what the menu would ever dial to isn't silently rewritten down.
+		next := max(1, intValue(eff, row.key)+delta)
 		return m.setInt(row.key, next)
 	}
 	return false
@@ -251,9 +249,9 @@ func isSet(cfg *config, key string) bool {
 // the user's settings). out/errw are injected for testability; in main they are
 // os.Stdout.
 func runConfigMenu(out io.Writer, configFile string) error {
-	cfg, err := loadConfig(configFile)
+	cfg, err := loadConfigStrict(configFile)
 	if err != nil {
-		return fmt.Errorf("refusing to edit malformed config %s: %w", configFile, err)
+		return fmt.Errorf("refusing to edit config %s: %w", configFile, err)
 	}
 	if cfg == nil {
 		cfg = &config{}
@@ -273,7 +271,12 @@ func runConfigMenu(out io.Writer, configFile string) error {
 		_ = term.Restore(inFd, oldState)
 		return err
 	}
-	w.Flush()
+	if err := w.Flush(); err != nil {
+		_ = term.Restore(inFd, oldState)
+		return err
+	}
+	// Teardown is best-effort: on the way out we can't do anything useful with a
+	// write error, and the terminal restore must happen regardless.
 	defer func() {
 		fmt.Fprint(w, cursorShow+altScreenOff)
 		w.Flush()
@@ -295,15 +298,24 @@ func runConfigMenu(out io.Writer, configFile string) error {
 	defer signal.Stop(sig)
 	go func() { <-sig; events <- event{kind: evQuit} }()
 
-	draw := func() {
-		fmt.Fprint(w, clearHome)
-		for _, l := range m.lines(r, configFile) {
-			fmt.Fprintf(w, "%s\r\n", l)
+	// draw repaints the whole menu. Writes to the main output are required: if
+	// stdout stops accepting them, abort rather than keep processing keys and
+	// saving config against a frozen display.
+	draw := func() error {
+		if _, err := fmt.Fprint(w, clearHome); err != nil {
+			return err
 		}
-		w.Flush()
+		for _, l := range m.lines(r, configFile) {
+			if _, err := fmt.Fprintf(w, "%s\r\n", l); err != nil {
+				return err
+			}
+		}
+		return w.Flush()
 	}
 
-	draw()
+	if err := draw(); err != nil {
+		return err
+	}
 	for e := range events {
 		quit, changed := m.apply(e)
 		if changed {
@@ -315,7 +327,9 @@ func runConfigMenu(out io.Writer, configFile string) error {
 		if quit {
 			return nil
 		}
-		draw()
+		if err := draw(); err != nil {
+			return err
+		}
 	}
 	return nil
 }

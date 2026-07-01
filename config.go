@@ -118,21 +118,75 @@ func loadConfig(path string) (*config, error) {
 	return &cfg, nil
 }
 
+// loadConfigStrict is loadConfig for the write paths (set/unset/menu): unlike
+// loadConfig it rejects a file that contains keys this binary doesn't recognise.
+// saveConfig serialises only the known struct fields, so a silent round-trip
+// would drop any key written by a newer treetop; refusing up front turns that
+// data loss into a clear error the user can act on. The read path (show) stays
+// forward-compatible via loadConfig, which ignores unknown keys.
+func loadConfigStrict(path string) (*config, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	defer f.Close()
+	dec := json.NewDecoder(f)
+	dec.DisallowUnknownFields()
+	var cfg config
+	if err := dec.Decode(&cfg); err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", path, err)
+	}
+	return &cfg, nil
+}
+
 // saveConfig writes cfg to path as pretty-printed JSON, creating the parent
 // directory when absent. Only the keys set on cfg are written (nil pointers are
 // omitted, see the config struct), so the file stays a minimal overlay of the
-// built-in defaults rather than a full snapshot. Written 0o644 in a 0o755 dir,
-// matching the usual dotfile permissions.
+// built-in defaults rather than a full snapshot.
+//
+// The write is atomic: data goes to a temp file in the same directory which is
+// synced and renamed over the target, so a crash or failed write can't truncate
+// an existing config to empty or leave it half-written — which matters because
+// the menu saves on every keystroke. Same-directory keeps the rename on one
+// filesystem. Final mode is 0o644 in a 0o755 dir, the usual dotfile permissions.
 func saveConfig(path string, cfg *config) error {
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err
 	}
 	data = append(data, '\n')
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+	tmp, err := os.CreateTemp(dir, ".config-*.json.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	// Best-effort cleanup if we bail before the rename; after a successful
+	// rename tmpName no longer exists and this Remove is a harmless no-op.
+	defer os.Remove(tmpName)
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	// CreateTemp makes the file 0o600; match the readable dotfile mode we'd
+	// otherwise write with.
+	if err := os.Chmod(tmpName, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
 }
 
 // setConfigValue parses value for the given key and assigns it on cfg. Boolean

@@ -235,6 +235,24 @@ func TestRunConfigUnsetNoFileNoWrite(t *testing.T) {
 	}
 }
 
+func TestRunConfigSetRefusesUnknownKeys(t *testing.T) {
+	// A file carrying a key this binary doesn't know (e.g. written by a newer
+	// treetop) must not be rewritten — saveConfig would drop the unknown key. set
+	// and unset both refuse and leave the file untouched.
+	const original = `{"pr":true,"future_key":"keep me"}`
+	for _, args := range [][]string{{"set", "watch", "true"}, {"unset", "pr"}} {
+		path := writeConfig(t, original)
+		var out, errw bytes.Buffer
+		if err := runConfig(&out, &errw, path, args); err == nil {
+			t.Errorf("%v did not refuse a file with unknown keys", args)
+		}
+		data, _ := os.ReadFile(path)
+		if string(data) != original {
+			t.Errorf("%v rewrote the file (dropping unknown keys): %q", args, data)
+		}
+	}
+}
+
 func TestRunConfigSetRefusesMalformedFile(t *testing.T) {
 	// set/unset must not overwrite a file they can't parse — that would discard
 	// the user's existing settings.
