@@ -57,7 +57,7 @@ Flags:
                          worktree (implies --pr; full view only)
   --notify               with --watch, raise a desktop notification when a PR is
                          approved or sent back for changes, or CI fails (implies
-                         --pr; same polling/gating; needs an OSC 9 terminal)
+                         --pr; same polling/gating; needs an OSC 777 terminal)
   --in-use               show only worktrees with a live session (in use)
   --open                 show only worktrees without a session (open)
   --root DIR             directory to scan for repos (repeatable; default: $HOME)
