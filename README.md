@@ -296,11 +296,12 @@ already in when treetop launches never fires — only changes after that do.
 
 `--notify` implies `--pr`, so the same `gh` polling and filter gating apply: it
 notifies only for the worktrees actually being polled (a filtered list, max 5
-projects). Notifications are delivered as `OSC 9` escape sequences, which
-terminals such as **Ghostty**, iTerm2, WezTerm, and kitty render as real system
+projects). Notifications are delivered as `OSC 777` escape sequences, which
+terminals such as **Ghostty**, WezTerm, kitty, and urxvt render as real system
 notifications (inside `tmux` they're wrapped for passthrough, which needs
-`set -g allow-passthrough on`). Terminals without `OSC 9` support simply show
-nothing.
+`set -g allow-passthrough on`). `OSC 777` carries an explicit title, so the
+notification reads `treetop` rather than inheriting the shell's window title.
+Terminals without `OSC 777` support simply show nothing.
 
 ## How in-use detection works (and its limits)
 

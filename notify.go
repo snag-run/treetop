@@ -110,7 +110,7 @@ func fire(out []notification, project string, w Worktree, what string) []notific
 // "snag/feat-renderer-host-brand — changes requested". The project and branch
 // come straight from the filesystem and git, so they're scrubbed of control
 // runes the same way the rendered table is (see sanitizeDisplay): otherwise a
-// branch named with an embedded ESC/ST would inject into the OSC 9 sequence.
+// branch named with an embedded ESC/ST would inject into the OSC 777 sequence.
 func notifyBody(project string, w Worktree, what string) string {
 	ref := w.Branch
 	if ref == "" {
@@ -145,26 +145,34 @@ func ciSettledFailure(w Worktree) bool {
 	return true
 }
 
-// raiseNotifications writes each pending notification to the terminal as an OSC 9
-// desktop notification. It must be called from the main loop, which owns out, so
-// the writes never interleave with the refresh goroutine. The frame's own flush
-// (in render) pushes these out; an empty slice is a no-op.
+// notifyTitle is the fixed title on every notification. OSC 777 carries an
+// explicit title, so treetop names itself rather than letting the terminal fall
+// back to the window title — which the shell tends to set to the running command
+// line, leaking "treetop -w --checks --pr --notify" into the notification.
+const notifyTitle = "treetop"
+
+// raiseNotifications writes each pending notification to the terminal as an
+// OSC 777 desktop notification. It must be called from the main loop, which owns
+// out, so the writes never interleave with the refresh goroutine. The frame's own
+// flush (in render) pushes these out; an empty slice is a no-op.
 func raiseNotifications(out *bufio.Writer, notes []notification) {
 	for _, nt := range notes {
 		// Best-effort: the buffered write surfaces any error at the frame's
 		// flush in render, so discard it here.
-		_, _ = fmt.Fprint(out, osc9(nt.body))
+		_, _ = fmt.Fprint(out, osc777(notifyTitle, nt.body))
 	}
 }
 
-// osc9 builds an OSC 9 desktop-notification escape sequence for body, wrapped for
-// tmux passthrough when running inside tmux. OSC 9 (ESC ] 9 ; <body> ST) is
-// rendered as a system notification by Ghostty (the target), iTerm2, WezTerm, and
-// kitty; terminals that don't understand it swallow the OSC string and show
-// nothing. The terminator is ST (ESC \), not BEL, so we never ring the bell.
-func osc9(body string) string {
+// osc777 builds an OSC 777 desktop-notification escape sequence with an explicit
+// title and body, wrapped for tmux passthrough when running inside tmux. OSC 777
+// (ESC ] 777 ; notify ; <title> ; <body> ST) is rendered as a system notification
+// by Ghostty (the target), WezTerm, kitty, and urxvt; terminals that don't
+// understand it swallow the OSC string and show nothing. Unlike OSC 9 it carries
+// a title, so the notification never inherits the shell's window title. The
+// terminator is ST (ESC \), not BEL, so we never ring the bell.
+func osc777(title, body string) string {
 	const esc = "\033"
-	return wrapPassthrough(esc + "]9;" + body + esc + `\`)
+	return wrapPassthrough(esc + "]777;notify;" + title + ";" + body + esc + `\`)
 }
 
 // wrapPassthrough wraps an escape sequence so it survives tmux, which otherwise

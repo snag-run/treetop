@@ -163,12 +163,12 @@ func TestSweepForgetsDepartedWorktree(t *testing.T) {
 	}
 }
 
-func TestOSC9Format(t *testing.T) {
+func TestOSC777Format(t *testing.T) {
 	t.Setenv("TMUX", "") // ensure no passthrough wrapping
-	got := osc9("snag/feat — approved")
-	want := "\033]9;snag/feat — approved\033\\"
+	got := osc777("treetop", "snag/feat — approved")
+	want := "\033]777;notify;treetop;snag/feat — approved\033\\"
 	if got != want {
-		t.Fatalf("osc9 = %q, want %q", got, want)
+		t.Fatalf("osc777 = %q, want %q", got, want)
 	}
 }
 
@@ -195,13 +195,13 @@ func TestWrapPassthroughNoTmux(t *testing.T) {
 	}
 }
 
-func TestRaiseNotificationsWritesOSC9(t *testing.T) {
+func TestRaiseNotificationsWritesOSC777(t *testing.T) {
 	t.Setenv("TMUX", "")
 	var buf bytes.Buffer
 	w := bufio.NewWriter(&buf)
 	raiseNotifications(w, []notification{{body: "snag/feat — CI failed"}})
 	w.Flush()
-	want := "\033]9;snag/feat — CI failed\033\\"
+	want := "\033]777;notify;treetop;snag/feat — CI failed\033\\"
 	if buf.String() != want {
 		t.Fatalf("raiseNotifications wrote %q, want %q", buf.String(), want)
 	}
@@ -217,8 +217,8 @@ func TestNotifyBodyFallsBackToRef(t *testing.T) {
 
 func TestNotifyBodySanitizesControlRunes(t *testing.T) {
 	// A branch (or project) name carrying an escape byte must be scrubbed before
-	// it reaches the OSC 9 sequence — otherwise it injects into the terminal.
-	w := Worktree{Path: "/a", Branch: "feat\033]9;pwn\033\\evil", HasPR: true}
+	// it reaches the OSC 777 sequence — otherwise it injects into the terminal.
+	w := Worktree{Path: "/a", Branch: "feat\033]777;pwn\033\\evil", HasPR: true}
 	got := notifyBody("snag", w, "approved")
 	if strings.ContainsRune(got, '\033') {
 		t.Fatalf("notifyBody left an ESC in the body: %q", got)
