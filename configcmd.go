@@ -7,7 +7,7 @@ import (
 
 // configUsage is the one-line usage for the `config` verb, printed to errw on an
 // unknown subaction or bad operands.
-const configUsage = "usage: treetop config [path|show|set <key> <value>|unset <key>]"
+const configUsage = "usage: treetop config [path|show|menu|set <key> <value>|unset <key>]"
 
 // configUsageErr prints configUsage to errw and returns err, so main exits
 // non-zero. Used for the argument-shape errors (wrong operand count, unknown
@@ -25,8 +25,9 @@ func configUsageErr(errw io.Writer, err error) error {
 // assertable in tests too.
 //
 // Subactions: `path` prints the resolved path; `show` (also the bare default)
-// prints the path then the seven effective key/value pairs; `set <key> <value>`
-// and `unset <key>` edit a single key in the file. path/show take no operand.
+// prints the path then the seven effective key/value pairs; `menu` opens the
+// interactive editor; `set <key> <value>` and `unset <key>` edit a single key in
+// the file. path/show/menu take no operand.
 // A bad operand count or unknown subaction writes configUsage to errw and
 // returns an error so main exits non-zero. Preferences are global-only: this
 // never consults the cwd or any per-project config.
@@ -48,6 +49,11 @@ func runConfig(out, errw io.Writer, configFile string, args []string) error {
 			return configUsageErr(errw, fmt.Errorf("config show takes no arguments"))
 		}
 		return configShow(out, errw, configFile)
+	case "menu":
+		if len(rest) > 0 {
+			return configUsageErr(errw, fmt.Errorf("config menu takes no arguments"))
+		}
+		return runConfigMenu(out, configFile)
 	case "set":
 		return configSet(out, errw, configFile, rest)
 	case "unset":

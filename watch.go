@@ -37,6 +37,8 @@ const (
 	evPageDown
 	evTop
 	evBottom
+	evLeft
+	evRight
 	evRune      // a printable character (ch is set)
 	evEnter     // Return
 	evEsc       // Escape
@@ -513,6 +515,10 @@ func readEscape(b2 byte, br *bufio.Reader, ch chan<- event) {
 		ch <- event{kind: evUp}
 	case 'B':
 		ch <- event{kind: evDown}
+	case 'C':
+		ch <- event{kind: evRight}
+	case 'D':
+		ch <- event{kind: evLeft}
 	case 'H':
 		ch <- event{kind: evTop}
 	case 'F':
