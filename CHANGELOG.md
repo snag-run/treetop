@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.0](https://github.com/snag-run/treetop/compare/v0.5.0...v0.6.0) (2026-07-01)
+
+
+### Features
+
+* edit config preferences via set/unset and an interactive menu ([#100](https://github.com/snag-run/treetop/issues/100)) ([edea930](https://github.com/snag-run/treetop/commit/edea93052d058d541085dc973bfdab529418493b))
+
+
+### Bug Fixes
+
+* give notifications an explicit title via OSC 777 ([#102](https://github.com/snag-run/treetop/issues/102)) ([e83ea9b](https://github.com/snag-run/treetop/commit/e83ea9bc792e05dde2c9d501e351d8aa7acfd6e2))
+
 ## [0.5.0](https://github.com/snag-run/treetop/compare/v0.4.0...v0.5.0) (2026-06-30)
 
 
