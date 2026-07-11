@@ -3,6 +3,32 @@
 Guidance for AI agents (and humans) working in this repo. `treetop` is a
 small Go CLI — a `top`-style tracker for git worktrees across projects.
 
+## Planning workflow (SDLC)
+
+Non-trivial features move through a staged flow before implementation, each
+stage producing a durable doc the next stage builds on:
+
+1. **Brief** — `grill-brief` → `docs/brief/<slug>.md`. The *why*: problem,
+   users, alternatives, cut-line, success criteria, and assumptions to test.
+2. **Spec** — `grill-spec` (interactive) or `to-spec` (no-interview synthesis)
+   → `docs/spec/<slug>.md`. The *how*: solution, user stories, and
+   implementation + testing decisions; draws its problem/stories from the brief.
+3. **Tickets** — `to-tickets` → tracer-bullet vertical slices with blocking
+   edges, sized by breadth and tagged HITL/AFK, published to the tracker.
+4. **Run plan** — `to-run-plan` → orchestrates the tickets into merge-gated
+   waves for multi-agent execution.
+
+Decision & doc homes:
+
+- Glossary / ubiquitous language → `CONTEXT.md` (repo root).
+- Cross-cutting, durable decisions → an ADR in `docs/adr/`; feature-scoped
+  decisions → the spec's *Implementation Decisions* section; project-wide
+  terms → `CONTEXT.md`.
+
+Small changes skip the flow — it earns its keep on features big enough to
+warrant a written why/how. All docs are created lazily, when the first
+decision in them resolves.
+
 ## Build, test, format
 
 CI runs these on Linux and macOS; keep them green before pushing:
