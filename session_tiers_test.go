@@ -2,6 +2,7 @@ package main
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -68,5 +69,36 @@ func TestMarkInUseTiers(t *testing.T) {
 	_, w = at(ps)
 	if w.Activity != ActIdle {
 		t.Errorf("work should decay to Idle past recentTTL, got %v", w.Activity)
+	}
+}
+
+// TestFilterByActivity checks that --in-use selects rooted-or-active worktrees
+// and --open selects only idle ones — a recently-quiet (ActRecent) worktree is
+// its own tier, shown by neither filter.
+func TestFilterByActivity(t *testing.T) {
+	mk := func(path string, rooted bool, act Activity) Worktree {
+		return Worktree{Path: path, Rooted: rooted, Activity: act}
+	}
+	base := []Project{{Name: "p", Worktrees: []Worktree{
+		mk("/rooted", true, ActIdle),    // in use (anchored)
+		mk("/active", false, ActActive), // in use (working)
+		mk("/recent", false, ActRecent), // recent — neither in use nor open
+		mk("/idle", false, ActIdle),     // open
+	}}}
+	joinPaths := func(ps []Project) string {
+		var b []string
+		for _, p := range ps {
+			for _, w := range p.Worktrees {
+				b = append(b, w.Path)
+			}
+		}
+		return strings.Join(b, ",")
+	}
+
+	if got := joinPaths(filterProjects(base, options{onlyInUse: true})); got != "/rooted,/active" {
+		t.Errorf("--in-use = %q, want %q", got, "/rooted,/active")
+	}
+	if got := joinPaths(filterProjects(base, options{onlyOpen: true})); got != "/idle" {
+		t.Errorf("--open = %q, want %q (recent excluded)", got, "/idle")
 	}
 }

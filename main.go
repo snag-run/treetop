@@ -58,8 +58,8 @@ Flags:
   --notify               with --watch, raise a desktop notification when a PR is
                          approved or sent back for changes, or CI fails (implies
                          --pr; same polling/gating; needs an OSC 777 terminal)
-  --in-use               show only worktrees with a live session (in use)
-  --open                 show only worktrees without a session (open)
+  --in-use               show only worktrees in use (rooted or active)
+  --open                 show only idle worktrees (not in use or recent)
   --root DIR             directory to scan for repos (repeatable; default: $HOME)
   --depth N              levels below each root to scan for repos (default 1, max 3)
   -V, --version          print version and exit
@@ -554,7 +554,7 @@ func filterProjects(projects []Project, opts options) []Project {
 			if opts.onlyInUse && !w.InUse() {
 				continue
 			}
-			if opts.onlyOpen && w.InUse() {
+			if opts.onlyOpen && (w.InUse() || w.Activity == ActRecent) {
 				continue
 			}
 			wts = append(wts, w)

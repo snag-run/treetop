@@ -511,3 +511,37 @@ func TestRenderSessionGlyphs(t *testing.T) {
 		t.Errorf("unsupported scan should not claim a rooted ◆:\n%s", uo)
 	}
 }
+
+// TestSessionMarker pins the exact two-slot [root][activity] output for every
+// rooted/activity/supported combination, so a swapped slot or a wrong glyph on
+// one worktree can't hide behind a global Contains check.
+func TestSessionMarker(t *testing.T) {
+	r := newRenderer(&strings.Builder{}, true, false, false) // color on
+	const sp = " "
+	root := colCyan + "◆" + colReset
+	active := colGreen + "●" + colReset
+	recent := colDim + "◐" + colReset
+	unknown := colDim + "?" + colReset
+
+	cases := []struct {
+		name      string
+		rooted    bool
+		act       Activity
+		supported bool
+		want      string
+	}{
+		{"root + active", true, ActActive, true, root + active},
+		{"active, not rooted (drift)", false, ActActive, true, sp + active},
+		{"rooted, idle", true, ActIdle, true, root + sp},
+		{"recent only", false, ActRecent, true, sp + recent},
+		{"idle", false, ActIdle, true, sp + sp},
+		{"unsupported scan shows ?", false, ActIdle, false, unknown + sp},
+		{"unsupported still shows marker activity", false, ActActive, false, unknown + active},
+	}
+	for _, c := range cases {
+		if got := r.sessionMarker(c.rooted, c.act, c.supported); got != c.want {
+			t.Errorf("%s: sessionMarker(%v, %v, supported=%v) = %q, want %q",
+				c.name, c.rooted, c.act, c.supported, got, c.want)
+		}
+	}
+}

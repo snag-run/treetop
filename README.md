@@ -7,8 +7,8 @@ its branch, which ones are in use, and when each last changed — in one view.
 
 If you juggle lots of worktrees (multiple branches in flight, agents working in
 parallel), it's easy to lose track of what's where. `treetop` scans your repos,
-groups worktrees by project, marks the ones that have a session running inside
-them, and shows how recently each one changed.
+groups worktrees by project, marks the ones in use — a session anchored in them,
+or work actively touching them — and shows how recently each one changed.
 
 ```
 $ treetop snag
@@ -110,8 +110,8 @@ treetop -w               # live mode, refreshing every 2s
 treetop -w -i 5          # live mode, every 5s
 treetop -w -p            # live, collapsed to projects
 treetop -w -e snag -e athanor  # live mode, multiple projects
-treetop --in-use         # only worktrees with a live session
-treetop --open           # only worktrees with no session
+treetop --in-use         # only worktrees in use (rooted or active)
+treetop --open           # only idle worktrees (not in use or recent)
 treetop --root ~/code    # scan a specific directory (repeatable)
 treetop --pr -e snag     # show PR check status (needs gh; needs a filter)
 ```
@@ -122,7 +122,8 @@ project names. Pass it positionally or with `-e/--regexp`; give several patterns
 containing `|` so your shell doesn't treat it as a pipe.
 
 A collapsed (`-p`) view shows the worktree count, how many are in use, and the
-most recent change per project — handy when you have many projects:
+newest edit (or git activity, when nothing is edited) per project — handy when
+you have many projects:
 
 ```
 $ treetop -p
@@ -139,8 +140,8 @@ $ treetop -p
 | `--pr` | Show a PR check-status glyph per worktree (needs `gh`; polls only when filtered, max 5 projects) |
 | `--checks` | Expand `--pr` into one row per CI check under each worktree (implies `--pr`) |
 | `--notify` | With `--watch`, raise a desktop notification when a PR is approved or sent back for changes, or CI fails (implies `--pr`) |
-| `--in-use` | Show only worktrees with a live session |
-| `--open` | Show only worktrees with no session |
+| `--in-use` | Show only worktrees in use (rooted or active) |
+| `--open` | Show only idle worktrees (not in use, not recently active) |
 | `--root DIR` | Directory to scan for repos (repeatable; default `$HOME`) |
 | `--depth N` | Levels below each root to scan for repos (default 1, max 3) |
 | `--no-color` | Disable ANSI color (also honors `NO_COLOR`) |
