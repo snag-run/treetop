@@ -85,21 +85,18 @@ claude:global)
 	SETTINGS="$BASE/settings.json"
 	HOOKS_DIR="$BASE/hooks"
 	MARK_CMD="$HOOKS_DIR/treetop-mark-inuse.sh"
-	UNMARK_CMD="$HOOKS_DIR/treetop-unmark-inuse.sh"
 	;;
 claude:repo)
 	BASE="$root/.claude"
 	SETTINGS="$BASE/settings.json"
 	HOOKS_DIR="$BASE/hooks"
 	MARK_CMD="\$CLAUDE_PROJECT_DIR/.claude/hooks/treetop-mark-inuse.sh"
-	UNMARK_CMD="\$CLAUDE_PROJECT_DIR/.claude/hooks/treetop-unmark-inuse.sh"
 	;;
 codex:global)
 	BASE="$HOME/.codex"
 	SETTINGS="$BASE/hooks.json"
 	HOOKS_DIR="$BASE/hooks"
 	MARK_CMD="$HOOKS_DIR/treetop-mark-inuse.sh"
-	UNMARK_CMD="$HOOKS_DIR/treetop-unmark-inuse.sh"
 	;;
 codex:repo)
 	BASE="$root/.codex"
@@ -108,7 +105,6 @@ codex:repo)
 	# Codex command hooks run with the session cwd. Resolve repo-local scripts
 	# from the git root so the config works when Codex starts in a subdirectory.
 	MARK_CMD='"$(git rev-parse --show-toplevel)/.codex/hooks/treetop-mark-inuse.sh"'
-	UNMARK_CMD='"$(git rev-parse --show-toplevel)/.codex/hooks/treetop-unmark-inuse.sh"'
 	;;
 esac
 
@@ -122,52 +118,35 @@ else
 fi
 
 # merge_settings rewrites $SETTINGS by piping it through the given jq program,
-# with $mark/$unmark bound to the command strings. Always removes any existing
-# treetop entries first (keyed by exact command match), so it is idempotent.
+# with $mark bound to the mark-hook command string.
 merge_settings() {
 	local prog="$1" tmp
 	tmp="$(mktemp)"
-	jq --arg mark "$MARK_CMD" --arg unmark "$UNMARK_CMD" "$prog" "$SETTINGS" >"$tmp"
+	jq --arg mark "$MARK_CMD" "$prog" "$SETTINGS" >"$tmp"
 	mv "$tmp" "$SETTINGS"
 }
 
-if [ "$PROVIDER" = "codex" ]; then
-	STRIP='
-  def strip_cmd($cmd):
-    map(.hooks |= map(select(.command != $cmd)))
+# The mark hook heartbeats every SessionStart / SubagentStart / PreToolUse /
+# PostToolUse (same four events for Claude and Codex), and there is no stop hook
+# — treetop lets the marker decay by mtime (see marker.go). STRIP removes any
+# treetop hook (by script name, so it also cleans up the pre-heartbeat
+# SubagentStop/Stop "unmark" hooks on upgrade) from every slot we might touch,
+# then drops now-empty legacy slots; ADD re-adds the mark hook to the four
+# heartbeat events. Keyed by script name, so re-running is idempotent.
+STRIP='
+  def strip_tt:
+    map(.hooks |= map(select((.command // "") | test("treetop-(un)?mark-inuse\\.sh") | not)))
     | map(select((.hooks | length) > 0));
   .hooks //= {}
-  | .hooks.SessionStart  //= []
-  | .hooks.Stop          //= []
-  | .hooks.SubagentStart //= []
-  | .hooks.SubagentStop  //= []
-  | .hooks.SessionStart  |= strip_cmd($mark)
-  | .hooks.Stop          |= strip_cmd($unmark)
-  | .hooks.SubagentStart |= strip_cmd($mark)
-  | .hooks.SubagentStop  |= strip_cmd($unmark)
+  | reduce ("SessionStart","SubagentStart","PreToolUse","PostToolUse","SubagentStop","Stop") as $e
+      (.; .hooks[$e] = ((.hooks[$e] // []) | strip_tt))
+  | reduce ("SubagentStop","Stop") as $e
+      (.; if (.hooks[$e] | length) == 0 then del(.hooks[$e]) else . end)
 '
-	ADD='
-  | .hooks.SessionStart  += [{matcher: "*", hooks: [{type: "command", command: $mark}]}]
-  | .hooks.Stop          += [{matcher: "*", hooks: [{type: "command", command: $unmark}]}]
-  | .hooks.SubagentStart += [{matcher: "*", hooks: [{type: "command", command: $mark}]}]
-  | .hooks.SubagentStop  += [{matcher: "*", hooks: [{type: "command", command: $unmark}]}]
+ADD='
+  | reduce ("SessionStart","SubagentStart","PreToolUse","PostToolUse") as $e
+      (.; .hooks[$e] += [{matcher: "*", hooks: [{type: "command", command: $mark}]}])
 '
-else
-	STRIP='
-  def strip_cmd($cmd):
-    map(.hooks |= map(select(.command != $cmd)))
-    | map(select((.hooks | length) > 0));
-  .hooks //= {}
-  | .hooks.SubagentStart //= []
-  | .hooks.SubagentStop  //= []
-  | .hooks.SubagentStart |= strip_cmd($mark)
-  | .hooks.SubagentStop  |= strip_cmd($unmark)
-'
-	ADD='
-  | .hooks.SubagentStart += [{matcher: "*", hooks: [{type: "command", command: $mark}]}]
-  | .hooks.SubagentStop  += [{matcher: "*", hooks: [{type: "command", command: $unmark}]}]
-'
-fi
 
 if [ "$UNINSTALL" = 1 ]; then
 	merge_settings "$STRIP"
@@ -177,10 +156,12 @@ if [ "$UNINSTALL" = 1 ]; then
 	exit 0
 fi
 
-# Install: copy the hook scripts into place, then add the hook entries.
+# Install: copy the hook script into place, then add the hook entries. Remove any
+# stale unmark script from a pre-heartbeat install (its hook entries are stripped
+# above).
 mkdir -p "$HOOKS_DIR"
 install -m 0755 "$SRC_DIR/treetop-mark-inuse.sh" "$HOOKS_DIR/treetop-mark-inuse.sh"
-install -m 0755 "$SRC_DIR/treetop-unmark-inuse.sh" "$HOOKS_DIR/treetop-unmark-inuse.sh"
+rm -f "$HOOKS_DIR/treetop-unmark-inuse.sh"
 
 merge_settings "$STRIP$ADD"
 
