@@ -111,6 +111,36 @@ func TestMarkerActive(t *testing.T) {
 	})
 }
 
+func TestMarkerActiveWithin(t *testing.T) {
+	// A timestamp marker aged between the two windows: fresh for the recent tier,
+	// stale for the active tier. This is what separates ActActive from ActRecent.
+	dir := t.TempDir()
+	writeMarker(t, dir, "treetop in-use since whenever\n")
+	age := (activeTTL + recentTTL) / 2
+	stamp := time.Now().Add(-age)
+	if err := os.Chtimes(filepath.Join(dir, markerName), stamp, stamp); err != nil {
+		t.Fatal(err)
+	}
+	if markerActiveWithin(dir, activeTTL) {
+		t.Errorf("marker aged %s should be stale for the active window (%s)", age, activeTTL)
+	}
+	if !markerActiveWithin(dir, recentTTL) {
+		t.Errorf("marker aged %s should be fresh for the recent window (%s)", age, recentTTL)
+	}
+
+	// A live PID overrides the window entirely (legacy back-compat).
+	pdir := t.TempDir()
+	stubPIDIsAgent(t, true)
+	writeMarker(t, pdir, strconv.Itoa(os.Getpid())+"\n")
+	old := time.Now().Add(-2 * recentTTL)
+	if err := os.Chtimes(filepath.Join(pdir, markerName), old, old); err != nil {
+		t.Fatal(err)
+	}
+	if !markerActiveWithin(pdir, activeTTL) {
+		t.Error("a live-PID legacy marker should be active regardless of mtime")
+	}
+}
+
 func TestFirstLinePID(t *testing.T) {
 	tests := []struct {
 		in      string

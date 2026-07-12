@@ -15,6 +15,7 @@ const (
 	colGreen  = "\033[32m"
 	colRed    = "\033[31m"
 	colYellow = "\033[33m"
+	colCyan   = "\033[36m"
 	colDim    = "\033[2m"
 	colBold   = "\033[1m"
 )
@@ -157,14 +158,38 @@ func (r renderer) prCell(wt Worktree, width int) string {
 	return cell + strings.Repeat(" ", pad)
 }
 
-// statusCell builds the leading status field: the in-use marker, plus the PR
-// glyph when the --pr column is active. Kept in one place so the full and
+// statusCell builds the leading status field: the two-slot session marker, plus
+// the PR glyph when the --pr column is active. Kept in one place so the full and
 // compact renderers stay aligned.
 func (r renderer) statusCell(marker, glyph string) string {
 	if !r.pr {
 		return marker
 	}
 	return marker + " " + glyph
+}
+
+// sessionMarker renders the two-slot [root][activity] session field. The root
+// slot is ◆ when a session is anchored here, ? when the scan can't tell (its
+// platform is unsupported), else blank. The activity slot is ● when work is
+// hitting the worktree now, ◐ when it was worked recently, else blank — driven
+// by the heartbeat marker, which reports even when the scan can't. Mirrors the
+// glyph legend documented in the README.
+func (r renderer) sessionMarker(rooted bool, act Activity, supported bool) string {
+	root := " "
+	switch {
+	case !supported:
+		root = r.paint(colDim, "?")
+	case rooted:
+		root = r.paint(colCyan, "◆")
+	}
+	activity := " "
+	switch act {
+	case ActActive:
+		activity = r.paint(colGreen, "●")
+	case ActRecent:
+		activity = r.paint(colDim, "◐")
+	}
+	return root + activity
 }
 
 func (r renderer) paint(c, s string) string {
@@ -322,12 +347,7 @@ func (r renderer) render(projects []Project, supported bool) {
 		}
 		fmt.Fprintln(r.w, r.paint(colBold, sanitizeDisplay(p.Name)))
 		for _, wt := range p.Worktrees {
-			marker := " "
-			if wt.InUse {
-				marker = r.paint(colGreen, "●")
-			} else if !supported {
-				marker = r.paint(colDim, "?")
-			}
+			marker := r.sessionMarker(wt.Rooted, wt.Activity, supported)
 			// Link the rollup glyph to the PR (its checks tab is one hop away).
 			// hyperlink no-ops on a worktree with no PR, where PRURL is empty.
 			glyph := r.hyperlink(wt.PRURL, r.checkGlyph(wt.HasPR, wt.Check))
@@ -396,11 +416,17 @@ func (r renderer) renderCompact(projects []Project, supported bool) {
 
 	for _, p := range projects {
 		nWorktrees, nInUse := len(p.Worktrees), 0
+		anyRooted := false
+		projAct := ActIdle
 		var edited, changed time.Time
 		var hasEdit, hasChanged bool
 		for _, wt := range p.Worktrees {
-			if wt.InUse {
+			if wt.InUse() {
 				nInUse++
+			}
+			anyRooted = anyRooted || wt.Rooted
+			if wt.Activity > projAct {
+				projAct = wt.Activity
 			}
 			if wt.HasEdit && wt.Edited.After(edited) {
 				edited, hasEdit = wt.Edited, true
@@ -410,12 +436,7 @@ func (r renderer) renderCompact(projects []Project, supported bool) {
 			}
 		}
 
-		marker := " "
-		if nInUse > 0 {
-			marker = r.paint(colGreen, "●")
-		} else if !supported {
-			marker = r.paint(colDim, "?")
-		}
+		marker := r.sessionMarker(anyRooted, projAct, supported)
 		prState, hasPR := projectWorstCheck(p)
 		status := r.statusCell(marker, r.checkGlyph(hasPR, prState))
 

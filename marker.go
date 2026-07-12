@@ -22,13 +22,13 @@ import (
 //
 //	date > <worktree>/.treetop-inuse   # on SessionStart/SubagentStart/Pre+PostToolUse
 //
-// The marker is honoured only while that mtime is fresh (see markerTTL), so a
-// worktree that goes quiet decays back to idle on its own and a crashed or
-// force-quit session can't pin one in use — no stop hook required.
+// Readers ask about a window (see markerActiveWithin): a short one for "active
+// now", a longer one for "recently active". A quiet worktree decays on its own —
+// no stop hook — and a crashed session can't pin one in use.
 //
-// For backward compatibility the reader still accepts a legacy marker whose first
-// line holds an owning PID, honouring it only while that process is both alive
-// and still looks like an agent session (see pidIsAgentFunc).
+// For backward compatibility a legacy marker whose first line holds a PID is
+// honoured while that process is both alive and still looks like an agent session
+// (see pidIsAgentFunc), guarding against a recycled PID pinning the worktree.
 const markerName = ".treetop-inuse"
 
 // pidIsAgentFunc verifies that a live marker PID still belongs to an agent
@@ -47,8 +47,19 @@ const markerTTL = 5 * time.Minute
 // path.
 const markerHeadMax = 128
 
-// markerActive reports whether worktreePath holds a live .treetop-inuse marker.
+// markerActive reports whether worktreePath holds a live .treetop-inuse marker,
+// using the default freshness window.
 func markerActive(worktreePath string) bool {
+	return markerActiveWithin(worktreePath, markerTTL)
+}
+
+// markerActiveWithin reports whether worktreePath holds a .treetop-inuse marker
+// that was re-stamped within d. The heartbeat hook renews the marker's mtime on
+// every session/subagent start and tool call, so a small d answers "worked here
+// just now" and a larger d answers "worked here recently". A legacy marker whose
+// first line is a PID is honoured while that process is a live agent, regardless
+// of d.
+func markerActiveWithin(worktreePath string, d time.Duration) bool {
 	path := filepath.Join(worktreePath, markerName)
 	fi, err := os.Lstat(path)
 	if err != nil || !fi.Mode().IsRegular() {
@@ -59,14 +70,14 @@ func markerActive(worktreePath string) bool {
 		return false
 	}
 	if pid, ok := firstLinePID(data); ok {
-		// Honour the PID marker only while the process is alive AND still looks
-		// like an agent — guarding against a recycled PID pinning the worktree.
+		// Honour the legacy PID marker only while the process is alive AND still
+		// looks like an agent — guarding against a recycled PID pinning it.
 		return pidAlive(pid) && pidIsAgentFunc(pid)
 	}
-	// No PID: trust the marker only while its mtime is recent — and not in the
+	// Timestamp marker: trust it only while its mtime is within d — and not in the
 	// future, which would otherwise read as perpetually fresh.
 	age := time.Since(fi.ModTime())
-	return age >= 0 && age <= markerTTL
+	return age >= 0 && age <= d
 }
 
 // readHead reads up to max bytes from the start of a file.

@@ -470,3 +470,78 @@ func TestRenderHyperlinks(t *testing.T) {
 		t.Errorf("no OSC 8 escapes should appear with colour off:\n%q", off.String())
 	}
 }
+
+// TestRenderSessionGlyphs checks the two-slot [root][activity] status field:
+// ◆ (cyan) for an anchored session, ● (green) for active work, ◐ (dim) for
+// recent work, and ? (dim) when the scan is unsupported.
+func TestRenderSessionGlyphs(t *testing.T) {
+	now := time.Now()
+	mk := func(path string, rooted bool, act Activity) Worktree {
+		return Worktree{Path: path, Branch: "b", Rooted: rooted, Activity: act,
+			Changed: now, HasTime: true, Edited: now, HasEdit: true}
+	}
+	projects := []Project{{Name: "snag", Worktrees: []Worktree{
+		mk("/root-active", true, ActActive),   // ◆ ●
+		mk("/drift-active", false, ActActive), // ● only (subagent/drift)
+		mk("/root-idle", true, ActIdle),       // ◆ only
+		mk("/recent", false, ActRecent),       // ◐ only
+	}}}
+
+	var b strings.Builder
+	newRenderer(&b, true, false, false).render(projects, true)
+	out := b.String()
+	for _, want := range []struct{ what, seq string }{
+		{"root ◆ (cyan)", colCyan + "◆" + colReset},
+		{"active ● (green)", colGreen + "●" + colReset},
+		{"recent ◐ (dim)", colDim + "◐" + colReset},
+	} {
+		if !strings.Contains(out, want.seq) {
+			t.Errorf("expected %s:\n%s", want.what, out)
+		}
+	}
+
+	// Scan unsupported: every root slot shows a dim ?, and no ◆ appears.
+	var un strings.Builder
+	newRenderer(&un, true, false, false).render(projects, false)
+	uo := un.String()
+	if !strings.Contains(uo, colDim+"?"+colReset) {
+		t.Errorf("unsupported scan should render a dim ?:\n%s", uo)
+	}
+	if strings.Contains(uo, "◆") {
+		t.Errorf("unsupported scan should not claim a rooted ◆:\n%s", uo)
+	}
+}
+
+// TestSessionMarker pins the exact two-slot [root][activity] output for every
+// rooted/activity/supported combination, so a swapped slot or a wrong glyph on
+// one worktree can't hide behind a global Contains check.
+func TestSessionMarker(t *testing.T) {
+	r := newRenderer(&strings.Builder{}, true, false, false) // color on
+	const sp = " "
+	root := colCyan + "◆" + colReset
+	active := colGreen + "●" + colReset
+	recent := colDim + "◐" + colReset
+	unknown := colDim + "?" + colReset
+
+	cases := []struct {
+		name      string
+		rooted    bool
+		act       Activity
+		supported bool
+		want      string
+	}{
+		{"root + active", true, ActActive, true, root + active},
+		{"active, not rooted (drift)", false, ActActive, true, sp + active},
+		{"rooted, idle", true, ActIdle, true, root + sp},
+		{"recent only", false, ActRecent, true, sp + recent},
+		{"idle", false, ActIdle, true, sp + sp},
+		{"unsupported scan shows ?", false, ActIdle, false, unknown + sp},
+		{"unsupported still shows marker activity", false, ActActive, false, unknown + active},
+	}
+	for _, c := range cases {
+		if got := r.sessionMarker(c.rooted, c.act, c.supported); got != c.want {
+			t.Errorf("%s: sessionMarker(%v, %v, supported=%v) = %q, want %q",
+				c.name, c.rooted, c.act, c.supported, got, c.want)
+		}
+	}
+}
