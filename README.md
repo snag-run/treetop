@@ -372,8 +372,11 @@ while its mtime is recent (see `marker.go`), so a worktree that goes quiet decay
 back to idle on its own, and a crashed or force-quit session can't pin one in
 use. This also means overlapping subagents in one worktree keep it lit as long as
 any of them is working. (Repo-local Codex hooks only run after Codex trusts the
-project config.) Upgrading from an older install automatically removes the
-previous `SubagentStop` / `Stop` "unmark" hooks.
+project config, and Codex may also require you to approve a newly installed hook
+via its `/hooks` review before it fires — independent of project trust — so the
+marker may not light up immediately after `install.sh`.) Upgrading from an older
+install automatically removes the previous `SubagentStop` / `Stop` "unmark"
+hooks.
 
 ## License
 
