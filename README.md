@@ -13,17 +13,27 @@ them, and shows how recently each one changed.
 ```
 $ treetop snag
 snag
-  ● ~/snag-wt1       fix/234-surface-truncation-error  edited 8s   · changed 15h
-  ● ~/snag-docs      feat/renderer-host-brand          edited 23m  · changed 23m
-    ~/snag-wt-deps   chore/deps-batch-majors           edited 14h  · changed 14h
-    ~/snag           (bare)                            edited —    · changed 1d
+  ◆ ● ~/snag-wt1       fix/234-surface-truncation-error  edited 8s   · changed 15h
+    ● ~/snag-docs      feat/renderer-host-brand          edited 23m  · changed 23m
+    ◐ ~/snag-wt-deps   chore/deps-batch-majors           edited 14h  · changed 14h
+      ~/snag           (bare)                            edited —    · changed 1d
 ```
 
-`●` marks a worktree that is **in use** (a live session is running there); a
-worktree with no marker is **open**. The two time columns are distinct signals:
-**edited** is the newest working-tree file change (including unstaged edits —
-e.g. an agent mid-task), while **changed** is the last git activity (commit /
-checkout / stage).
+The leading status is two slots — `[root][activity]`:
+
+| Glyph | Meaning |
+|-------|---------|
+| `◆` (cyan) | a live session is **rooted** here — anchored in this worktree (its cwd) |
+| `●` (green) | **active** — work is hitting this worktree right now |
+| `◐` (dim) | **recent** — worked within the last 15 min, now quiet |
+| `?` (dim) | session detection isn't supported on this platform |
+
+So `◆ ●` is a session working in its own root, a bare `●` is a subagent working in
+a worktree its session isn't rooted in, and `◆` alone is a session parked but idle.
+A worktree counts as **in use** when it's rooted or active; recent-only worktrees
+decay back to **open**. The two time columns are distinct signals: **edited** is
+the newest working-tree file change (including unstaged edits — e.g. an agent
+mid-task), while **changed** is the last git activity (commit / checkout / stage).
 
 ## Install
 
@@ -116,8 +126,8 @@ most recent change per project — handy when you have many projects:
 
 ```
 $ treetop -p
-  ● snag      3/10 in use   edited 14s
-    athanor   0/7 in use    edited 2w
+  ◆ ● snag      3/10 in use   edited 14s
+      athanor   0/7 in use    edited 2w
     ...
 ```
 
@@ -143,8 +153,10 @@ never descended into, so the cost of a deeper scan is just the directory stats).
 
 ### Vocabulary
 
-- **in use** — a worktree with a live session running inside it (marked `●`).
-- **open** — a worktree with no session.
+- **in use** — a worktree that is **rooted** (`◆`, a session anchored here) or
+  **active** (`●`, work hitting it now).
+- **recent** — worked within the last 15 min but now quiet (`◐`); decays to open.
+- **open** — a worktree with no session and no recent activity.
 - **edited** — the newest working-tree file change, including unstaged edits (so
   an agent editing files shows up immediately), in compact wording (`12s`, `5m`,
   `2d`). Shown as `—` when nothing is present (e.g. a bare repo).
@@ -305,21 +317,26 @@ Terminals without `OSC 777` support simply show nothing.
 
 ## How in-use detection works (and its limits)
 
-`treetop` decides a worktree is **in use** from two independent signals:
+`treetop` reads three signals per worktree into the two-slot `[root][activity]`
+status:
 
 1. **A live-session scan** (best-effort; Linux via `/proc`, macOS via
-   `ps`+`lsof`). It finds live Claude Code and Codex processes and marks a
-   worktree if the process is working at or below it — either by its working
-   directory, or by a file it currently holds open. The open-file check is what
-   lets `treetop` catch **subagents**, which may not `chdir` into the worktree
-   they target. Because an open descriptor is transient, a worktree stays marked
-   for 30s after the signal last appeared, so the `●` doesn't flicker.
-2. **A `.treetop-inuse` marker file** at the worktree root. This is the
-   deterministic, cross-platform signal: whatever drops the marker — not
-   `treetop` — reports the activity. The marker's first line may be the owning
-   process's PID, in which case it's honoured only while that process is alive
-   and still looks like an agent session — so a stale marker from a crashed
-   writer is ignored, even if the OS later recycles its PID to something else.
+   `ps`+`lsof`) finds live Claude Code and Codex processes. A process's **working
+   directory** marks a worktree as **rooted** (`◆`) — where the session is
+   anchored. A file it **holds open** marks the worktree as active work — this is
+   what catches **subagents**, which may not `chdir` into the worktree they
+   target. Both are smoothed over 30s so a transient descriptor doesn't flicker.
+2. **A `.treetop-inuse` marker file** at the worktree root, re-stamped by the
+   session hook on every tool call (a heartbeat; see below). Its mtime feeds the
+   activity tiers: touched within 3 min → **active** (`●`), within 15 min →
+   **recent** (`◐`), older → idle. This is the deterministic, cross-platform
+   signal — it works even where the scan can't run, and it's what lights up
+   in-process subagents the scan misses. (A legacy marker whose first line is a
+   PID is instead honoured while that process is a live agent, so a stale marker
+   from a crashed writer is ignored even if the OS recycles its PID.)
+
+A worktree is **in use** when it's rooted or active; a recent-but-quiet worktree
+decays back to open on its own.
 
 Known limits:
 

@@ -380,7 +380,7 @@ func main() {
 }
 
 func runOnce(opts options) error {
-	projects, badRoots, supported, err := collect(opts, newTracker(inUseDecay), nil)
+	projects, badRoots, supported, err := collect(opts, newTrackers(), nil)
 	if err != nil {
 		return err
 	}
@@ -442,14 +442,22 @@ func unsupportedSessionNote(supported bool) string {
 	return `treetop: live-session detection is unavailable on this platform; the in-use column shows "?". Drop a .treetop-inuse marker file in a worktree to mark it in use.`
 }
 
-// inUseDecay is how long a worktree stays marked in-use after its session
-// signal last appeared, smoothing over transient open file descriptors.
+// inUseDecay is how long a scan signal keeps a worktree marked after it last
+// appeared, smoothing over transient cwd/open-file sightings between refreshes.
 const inUseDecay = 30 * time.Second
 
+// activeTTL and recentTTL are the two heartbeat-marker windows behind the
+// Active and Recent activity tiers: a worktree touched within activeTTL is
+// working now, within recentTTL was worked recently, and older is idle.
+const (
+	activeTTL = 3 * time.Minute
+	recentTTL = 15 * time.Minute
+)
+
 // collect discovers projects, marks in-use worktrees, and applies filters. The
-// tracker carries in-use decay state across refreshes (in watch mode the caller
-// reuses one tracker; a fresh one makes decay a no-op for snapshots). The bool
-// reports whether live session detection is supported on this platform.
+// trackers carry scan-decay state across refreshes (in watch mode the caller
+// reuses them; fresh ones make decay a no-op for snapshots). The bool reports
+// whether live session detection is supported on this platform.
 //
 // live is an optional extra name filter (the live-mode filter box), AND'd with
 // the CLI patterns. Both are applied during discovery so filtered-out projects
@@ -458,14 +466,14 @@ const inUseDecay = 30 * time.Second
 // badRoots holds any roots that couldn't be read (as "<root>: <err>" strings);
 // discovery is non-fatal so the other roots are still scanned. Callers on the
 // watch refresh path should ignore it — printing would corrupt the live TUI.
-func collect(opts options, tr *tracker, live []*regexp.Regexp) (projects []Project, badRoots []string, supported bool, err error) {
+func collect(opts options, trs *trackers, live []*regexp.Regexp) (projects []Project, badRoots []string, supported bool, err error) {
 	keep := func(name string) bool { return keepName(opts.patterns, live, name) }
 	projects, badRoots, err = discoverProjects(opts.roots, opts.depth, keep)
 	if err != nil {
 		return nil, badRoots, false, err
 	}
 	scan := scanSessions()
-	scan.markInUse(tr, projects)
+	scan.markInUse(trs, projects)
 	projects = filterProjects(projects, opts)
 	// PR status is opt-in (--pr) and only polled when the list is narrowed, so an
 	// unfiltered $HOME scan never fans out a gh call per repo. Enrichment caps the
@@ -543,10 +551,10 @@ func filterProjects(projects []Project, opts options) []Project {
 		}
 		var wts []Worktree
 		for _, w := range p.Worktrees {
-			if opts.onlyInUse && !w.InUse {
+			if opts.onlyInUse && !w.InUse() {
 				continue
 			}
-			if opts.onlyOpen && w.InUse {
+			if opts.onlyOpen && w.InUse() {
 				continue
 			}
 			wts = append(wts, w)

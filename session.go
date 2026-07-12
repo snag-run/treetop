@@ -74,27 +74,41 @@ func nodeAgentToken(token string) bool {
 	}
 }
 
-// markInUse flags every worktree that has a live session at or below its path.
+// markInUse sets each worktree's Rooted flag and Activity tier from three
+// signals, kept distinct so an anchored-but-idle session reads differently from
+// one that is actively working:
 //
-// Two signals feed the marker:
-//
-//   - The session scan (cwd + open files). These are observed into the decay
-//     tracker so a worktree stays marked for the tracker's window after the
-//     signal last appeared, smoothing over transient open-file descriptors.
-//   - The .treetop-inuse marker file, which is authoritative and works on every
-//     platform — so a worktree can be in use even where the scan can't run.
-func (s sessionScan) markInUse(tr *tracker, projects []Project) {
+//   - Rooted: an agent process is anchored here (its cwd, from the scan),
+//     smoothed over inUseDecay via the root tracker.
+//   - Activity: work is touching this worktree — the .treetop-inuse heartbeat
+//     marker, or an open file the scan caught (work tracker). ActActive within
+//     activeTTL, ActRecent within recentTTL, else ActIdle. The marker works on
+//     every platform, so activity shows even where the scan can't run.
+func (s sessionScan) markInUse(trs *trackers, projects []Project) {
 	for pi := range projects {
 		wts := projects[pi].Worktrees
 		for wi := range wts {
-			wt := filepath.Clean(wts[wi].Path)
+			path := wts[wi].Path
+			wt := filepath.Clean(path)
 			if resolved, err := filepath.EvalSymlinks(wt); err == nil {
 				wt = resolved
 			}
-			if containsUnder(s.cwds, wt) || containsUnder(s.openFiles, wt) {
-				tr.observe(wt)
+			if containsUnder(s.cwds, wt) {
+				trs.root.observe(wt)
 			}
-			wts[wi].InUse = markerActive(wts[wi].Path) || tr.active(wt)
+			if containsUnder(s.openFiles, wt) {
+				trs.work.observe(wt)
+			}
+
+			wts[wi].Rooted = trs.root.within(wt, inUseDecay)
+			switch {
+			case markerActiveWithin(path, activeTTL) || trs.work.within(wt, inUseDecay):
+				wts[wi].Activity = ActActive
+			case markerActiveWithin(path, recentTTL) || trs.work.within(wt, recentTTL):
+				wts[wi].Activity = ActRecent
+			default:
+				wts[wi].Activity = ActIdle
+			}
 		}
 	}
 }

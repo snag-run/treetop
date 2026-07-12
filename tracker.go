@@ -2,38 +2,50 @@ package main
 
 import "time"
 
-// tracker keeps a short memory of which worktrees recently showed a live
-// session signal, so transient signals (an open file descriptor that is only
-// held for the duration of a read/write) don't make the in-use marker flicker.
+// tracker keeps a short memory of when each worktree last showed a given session
+// signal, so a transient signal (an open file descriptor held only for the
+// duration of a read/write) doesn't make an indicator flicker, and so a longer
+// window can report "recently active" after the signal has gone.
 //
-// A worktree is considered active for `decay` after it was last observed. In
-// snapshot mode the tracker is created fresh, so decay is a no-op and a signal
-// shows immediately; in watch mode one tracker lives across refreshes and
-// smooths the marker over the decay window.
+// It records last-seen times only; callers ask about a specific window with
+// within. In snapshot mode a fresh tracker has no history, so only signals seen
+// in this pass count; in watch mode one tracker lives across refreshes and
+// remembers earlier sightings.
 type tracker struct {
-	decay    time.Duration
 	lastSeen map[string]time.Time
 	now      func() time.Time // injectable for tests
 }
 
-func newTracker(decay time.Duration) *tracker {
+func newTracker() *tracker {
 	return &tracker{
-		decay:    decay,
 		lastSeen: map[string]time.Time{},
 		now:      time.Now,
 	}
 }
 
-// observe records that a live session signal was seen at path right now.
+// observe records that the signal was seen at path right now.
 func (t *tracker) observe(path string) {
 	t.lastSeen[path] = t.now()
 }
 
-// active reports whether path was observed within the decay window.
-func (t *tracker) active(path string) bool {
+// within reports whether path was observed within the last d.
+func (t *tracker) within(path string, d time.Duration) bool {
 	seen, ok := t.lastSeen[path]
 	if !ok {
 		return false
 	}
-	return t.now().Sub(seen) <= t.decay
+	age := t.now().Sub(seen)
+	return age >= 0 && age <= d
+}
+
+// trackers pairs the two session-scan signals, kept apart so a worktree that is
+// only a session's anchor (cwd) and one that is only being worked in (open
+// files) don't smear into each other's recency.
+type trackers struct {
+	root *tracker // cwd sightings — where a session is anchored
+	work *tracker // open-file sightings — where work is touching files
+}
+
+func newTrackers() *trackers {
+	return &trackers{root: newTracker(), work: newTracker()}
 }

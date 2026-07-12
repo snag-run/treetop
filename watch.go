@@ -383,8 +383,8 @@ func refreshLoop(opts options, queries <-chan string, out chan snapshot, done <-
 	ticker := time.NewTicker(time.Duration(opts.interval) * time.Second)
 	defer ticker.Stop()
 
-	// One tracker for the session, so in-use decay carries across refreshes.
-	tr := newTracker(inUseDecay)
+	// One tracker pair for the session, so scan decay carries across refreshes.
+	trs := newTrackers()
 	// One notifier for the session, so the per-worktree baseline (and so
 	// first-observation suppression) carries across refreshes. A no-op unless
 	// --notify is set.
@@ -400,7 +400,7 @@ func refreshLoop(opts options, queries <-chan string, out chan snapshot, done <-
 		// age reflects true data age: a slow-but-steady collect (each refresh
 		// running longer than the interval) still ages past the threshold.
 		started := time.Now()
-		projects, _, supported, cerr := collect(opts, tr, live)
+		projects, _, supported, cerr := collect(opts, trs, live)
 		s := snapshot{projects: projects, supported: supported, err: cerr, startedAt: started, notes: nf.diff(projects)}
 		select { // drop a stale pending snapshot, then deliver the fresh one
 		case old := <-out:
@@ -647,9 +647,9 @@ func runWatchPlain(opts options) {
 	r.checks = initialCheckView(opts.checks)
 	ticker := time.NewTicker(time.Duration(opts.interval) * time.Second)
 	defer ticker.Stop()
-	tr := newTracker(inUseDecay)
+	trs := newTrackers()
 	for {
-		projects, _, supported, err := collect(opts, tr, nil)
+		projects, _, supported, err := collect(opts, trs, nil)
 		fmt.Fprint(out, clearHome)
 		// collect ran synchronously just now, so the data is fresh (age 0). No live
 		// "/" filter in the plain (non-TTY) loop, so PR polling rides on CLI flags.
@@ -672,12 +672,15 @@ func runWatchPlain(opts options) {
 // stalled refresh isn't mistaken for fresh data.
 func headerLines(r renderer, opts options, projects []Project, supported bool, age time.Duration, prLiveActive bool) []string {
 	nProjects := len(projects)
-	nWorktrees, nInUse := 0, 0
+	nWorktrees, nInUse, nRecent := 0, 0, 0
 	for _, p := range projects {
 		nWorktrees += len(p.Worktrees)
 		for _, w := range p.Worktrees {
-			if w.InUse {
+			switch {
+			case w.InUse():
 				nInUse++
+			case w.Activity == ActRecent:
+				nRecent++
 			}
 		}
 	}
@@ -693,6 +696,11 @@ func headerLines(r renderer, opts options, projects []Project, supported bool, a
 	inUse := fmt.Sprintf("%d in use", nInUse)
 	if supported {
 		inUse = r.paint(colGreen, "● ") + inUse
+		// Surface the recent tier alongside the live count when any worktree is
+		// quieting down, so the third indicator is legible from the header too.
+		if nRecent > 0 {
+			inUse += " · " + r.paint(colDim, fmt.Sprintf("◐ %d recent", nRecent))
+		}
 	} else {
 		inUse = r.paint(colDim, "? sessions unknown (Linux/macOS only)")
 	}
