@@ -16,16 +16,19 @@ import (
 // the cwd scan, it sees in-process subagents because the hook — not treetop —
 // reports the activity.
 //
-// The file may be empty, or its first line may hold the owning process PID:
+// The mark hook re-stamps the file on every session start, subagent start, and
+// tool call (a heartbeat), so its mtime tracks the last moment an agent touched
+// the worktree:
 //
-//	echo $PPID > <worktree>/.treetop-inuse   # on SubagentStart / PreToolUse
-//	rm -f       <worktree>/.treetop-inuse     # on SubagentStop
+//	date > <worktree>/.treetop-inuse   # on SessionStart/SubagentStart/Pre+PostToolUse
 //
-// When a PID is present the marker is honoured only while that process is both
-// alive and still looks like an agent session (see pidIsAgentFunc), so a crashed
-// hook can't leave a worktree pinned in-use forever — not even if the kernel
-// recycles the PID to an unrelated process. With no PID we fall back to a
-// freshness window on the file's mtime.
+// The marker is honoured only while that mtime is fresh (see markerTTL), so a
+// worktree that goes quiet decays back to idle on its own and a crashed or
+// force-quit session can't pin one in use — no stop hook required.
+//
+// For backward compatibility the reader still accepts a legacy marker whose first
+// line holds an owning PID, honouring it only while that process is both alive
+// and still looks like an agent session (see pidIsAgentFunc).
 const markerName = ".treetop-inuse"
 
 // pidIsAgentFunc verifies that a live marker PID still belongs to an agent

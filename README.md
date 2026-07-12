@@ -335,9 +335,10 @@ Known limits:
 
 ### Marking agent worktrees in use
 
-The included hooks drop and remove the `.treetop-inuse` marker as agent sessions
-or subagents start and stop, so worktrees an agent is working in light up even
-when process scanning is unavailable or misses the activity:
+The included hook re-stamps a `.treetop-inuse` marker in the worktree an agent is
+working in on every session start, subagent start, and tool call, so worktrees
+light up even when process scanning is unavailable or misses the activity (e.g.
+in-process subagents, which never chdir into the worktree they target):
 
 ```sh
 # Claude Code global install (default provider)
@@ -365,11 +366,18 @@ clobbers other hooks), is idempotent, and for `--global` can also add
 `.treetop-inuse` to your global gitignore so the marker doesn't litter your
 repos. Requires `jq`.
 
-Claude Code hooks key on `SubagentStart` / `SubagentStop`. Codex hooks key on
-`SessionStart` / `Stop` and `SubagentStart` / `SubagentStop`; repo-local Codex
-hooks only run after Codex trusts the project config. If several subagents share
-one worktree, the first to stop clears the marker early — the live-session scan
-covers that gap.
+For both Claude Code and Codex the hook fires on `SessionStart`, `SubagentStart`,
+`PreToolUse`, and `PostToolUse` — a heartbeat that keeps the marker's mtime fresh
+while an agent is active. There is no stop hook: treetop honours the marker only
+while its mtime is recent (see `marker.go`), so a worktree that goes quiet decays
+back to idle on its own, and a crashed or force-quit session can't pin one in
+use. This also means overlapping subagents in one worktree keep it lit as long as
+any of them is working. (Repo-local Codex hooks only run after Codex trusts the
+project config, and Codex may also require you to approve a newly installed hook
+via its `/hooks` review before it fires — independent of project trust — so the
+marker may not light up immediately after `install.sh`.) Upgrading from an older
+install automatically removes the previous `SubagentStop` / `Stop` "unmark"
+hooks.
 
 ## License
 
