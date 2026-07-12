@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.7.0](https://github.com/snag-run/treetop/compare/v0.6.0...v0.7.0) (2026-07-12)
+
+
+### Features
+
+* two-tier active/recent activity indicator with a session-root marker ([#107](https://github.com/snag-run/treetop/issues/107)) ([ee0d568](https://github.com/snag-run/treetop/commit/ee0d56807fc0c4e593d2af368966243b3ac5e9fe))
+
+
+### Bug Fixes
+
+* heartbeat .treetop-inuse markers instead of start/stop pairing ([#105](https://github.com/snag-run/treetop/issues/105)) ([f442a13](https://github.com/snag-run/treetop/commit/f442a13ab7735a0ec55615f306017016c1048ec4))
+
 ## [0.6.0](https://github.com/snag-run/treetop/compare/v0.5.0...v0.6.0) (2026-07-01)
 
 
